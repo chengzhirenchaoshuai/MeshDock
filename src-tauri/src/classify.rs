@@ -1,5 +1,5 @@
 //! 连接方式判断（实施计划第 3 节）与 ping 结果解析，全部是纯函数
-use crate::model::{DerpMap, PeerStatus, Status, non_empty};
+use crate::model::{DerpMap, NetInfo, PeerStatus, Status, non_empty};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
@@ -220,6 +220,44 @@ pub fn control_unreachable(status: &Status) -> bool {
         h.contains("coordination server")
             && (h.contains("unable to connect") || h.contains("hasn't received a network map"))
     })
+}
+
+/// 解释为什么走中继：对比本机和对方各自上报的网络检查结论。
+/// 直连需要双方都有 IPv6，或 IPv4 能打洞（对称型 NAT 基本打不通），UDP 被阻断则都不行
+pub fn relay_reason(me: Option<&NetInfo>, peer: Option<&NetInfo>) -> Option<String> {
+    let mut reasons = Vec::new();
+    for (who, info) in [("对方", peer), ("本机", me)] {
+        let Some(info) = info else { continue };
+        if info.working_udp == Some(false) {
+            reasons.push(format!("{who}网络的 UDP 被阻断"));
+        }
+    }
+    for (who, info) in [("对方", peer), ("本机", me)] {
+        let Some(info) = info else { continue };
+        if info.working_ipv6 == Some(false) {
+            reasons.push(format!("{who}当前网络没有 IPv6"));
+        }
+    }
+    for (who, info) in [("对方", peer), ("本机", me)] {
+        let Some(info) = info else { continue };
+        if info.mapping_varies_by_dest_ip == Some(true) {
+            reasons.push(format!("{who} IPv4 是对称型 NAT"));
+        }
+    }
+    (!reasons.is_empty()).then(|| format!("可能的原因：{}，打不通直连", reasons.join("、")))
+}
+
+/// 中继连接补上原因（接在速度提示后面）；不是中继或找不到原因时原样返回
+pub fn with_relay_reason(mut conn: Conn, reason: Option<String>) -> Conn {
+    if conn.kind == ConnKind::Relay
+        && let Some(reason) = reason
+    {
+        conn.hint = Some(match conn.hint {
+            Some(h) => format!("{h}。{reason}"),
+            None => reason,
+        });
+    }
+    conn
 }
 
 /// 本机卡片的连接方式
@@ -485,6 +523,63 @@ mod tests {
             "Unable to connect to the Tailscale coordination server to synchronize the state of your tailnet. Peer reachability might degrade over time.".into(),
         ]);
         assert!(control_unreachable(&s));
+    }
+
+    #[test]
+    fn 验收场景_随身_wifi_走中继并说明原因() {
+        // 真实样本：工作笔记本最近一次上报时没有 IPv6、IPv4 是对称型 NAT
+        let n = crate::model::parse_netmap(include_str!("../fixtures/netmap.json")).unwrap();
+        let s = status();
+        let laptop = s
+            .peers()
+            .into_iter()
+            .find(|p| p.host_name.as_deref() == Some("work-laptop"))
+            .unwrap();
+        let peers = n.peer_net_info();
+        let reason = relay_reason(
+            n.self_net_info().as_ref(),
+            peers.get(laptop.public_key.as_ref().unwrap()),
+        );
+        assert_eq!(
+            reason.as_deref(),
+            Some("可能的原因：对方当前网络没有 IPv6、对方 IPv4 是对称型 NAT，打不通直连")
+        );
+        // 接在速度提示后面
+        let c = with_relay_reason(
+            classify(&peer(true, true, ""), None, &regions(), &home()),
+            reason,
+        );
+        let hint = c.hint.unwrap();
+        assert!(
+            hint.contains("500 KB/s") && hint.contains("没有 IPv6"),
+            "{hint}"
+        );
+    }
+
+    #[test]
+    fn 双方网络都正常时不编造原因() {
+        let ok = NetInfo {
+            working_ipv6: Some(true),
+            working_udp: Some(true),
+            mapping_varies_by_dest_ip: Some(false),
+        };
+        assert_eq!(relay_reason(Some(&ok), Some(&ok)), None);
+        assert_eq!(relay_reason(None, None), None);
+        // 非中继连接不追加
+        let lan = with_relay_reason(direct_conn("192.168.1.2:41641", &home()), Some("x".into()));
+        assert_eq!(lan.hint, None);
+    }
+
+    #[test]
+    fn 本机_udp_被阻断() {
+        let me = NetInfo {
+            working_udp: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            relay_reason(Some(&me), None).as_deref(),
+            Some("可能的原因：本机网络的 UDP 被阻断，打不通直连")
+        );
     }
 
     #[test]

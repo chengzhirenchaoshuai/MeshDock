@@ -1,6 +1,6 @@
 //! 调用官方 tailscale.exe：统一超时、隐藏黑框、把失败归类成带中文说明的错误
 use crate::classify::{LocalNet, PingResult, Regions, parse_ping};
-use crate::model::{DerpMap, Netcheck, Prefs, Status, parse_netcheck};
+use crate::model::{DerpMap, NetMap, Netcheck, Prefs, Status, parse_netcheck, parse_netmap};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -179,6 +179,17 @@ pub async fn derp_map() -> Result<DerpMap, CliError> {
     run_json(&["debug", "derp-map"]).await
 }
 
+/// 各设备上报的网络检查结论（用于解释中继原因）
+pub async fn netmap() -> Result<NetMap, CliError> {
+    let out = run_checked(&["debug", "netmap"]).await?;
+    parse_netmap(&out.stdout).map_err(|e| {
+        CliError::new(
+            ErrorKind::Failed,
+            format!("无法解析输出：{e}\n{}", out.stderr),
+        )
+    })
+}
+
 /// 本机网络体检，约 4 秒
 pub async fn netcheck() -> Result<Netcheck, CliError> {
     let out = run_checked(&["netcheck", "--format=json"]).await?;
@@ -248,6 +259,9 @@ mod tests {
         assert!(p.route_all.is_some());
         let d = derp_map().await.unwrap();
         assert!(d.regions.is_some());
+        let m = netmap().await.unwrap();
+        assert!(m.self_net_info().is_some());
+        assert!(!m.peer_net_info().is_empty());
     }
 
     #[tokio::test]

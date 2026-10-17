@@ -1,0 +1,52 @@
+{
+	"SelfNode": {
+		"ComputedName": "lan-desktop",
+		"Key": "nodekey:ca71619149f13167c3d336c4d910bd24a4fc5de047c423a96164c1801a4b4515",
+		"Hostinfo": {
+			"NetInfo": {
+				"WorkingIPv6": true,
+				"WorkingUDP": true,
+				"MappingVariesByDestIP": false,
+				"OSHasIPv6": true
+			}
+		}
+	},
+	"Peers": [
+		{
+			"ComputedName": "phone-router",
+			"Key": "nodekey:5bb40c1ea2787efa6e6f426de90f953e5ee2014ef0eb572122efc26376b2a073",
+			"Hostinfo": {
+				"NetInfo": {
+					"WorkingIPv6": true,
+					"WorkingUDP": true,
+					"MappingVariesByDestIP": true,
+					"OSHasIPv6": true
+				}
+			}
+		},
+		{
+			"ComputedName": "ming-pc",
+			"Key": "nodekey:f591affd81c3aa846ace1abf7520da69afaef60de93ad011ccf22ced0d3a5b5d",
+			"Hostinfo": {
+				"NetInfo": {
+					"WorkingIPv6": true,
+					"WorkingUDP": true,
+					"MappingVariesByDestIP": false,
+					"OSHasIPv6": true
+				}
+			}
+		},
+		{
+			"ComputedName": "peng-work",
+			"Key": "nodekey:bc139074cba919a9b11fa5a39fae27e022c64d94760f90a28edf424c0f18835d",
+			"Hostinfo": {
+				"NetInfo": {
+					"WorkingIPv6": false,
+					"WorkingUDP": true,
+					"MappingVariesByDestIP": true,
+					"OSHasIPv6": true
+				}
+			}
+		}
+	]
+}

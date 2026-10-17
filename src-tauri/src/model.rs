@@ -23,6 +23,8 @@ pub struct Status {
 pub struct PeerStatus {
     #[serde(rename = "ID")]
     pub id: Option<String>,
+    /// 节点公钥（nodekey:…），用来和 netmap 中的设备对应
+    pub public_key: Option<String>,
     pub host_name: Option<String>,
     #[serde(rename = "DNSName")]
     pub dns_name: Option<String>,
@@ -109,6 +111,62 @@ pub struct DerpRegion {
     pub region_name: Option<String>,
 }
 
+/// `tailscale debug netmap`：只取每台设备自己上报的网络检查结论，用于解释为什么走中继
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct NetMap {
+    pub self_node: Option<NetMapNode>,
+    pub peers: Option<Vec<NetMapNode>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct NetMapNode {
+    /// 节点公钥，与 status 的 PublicKey 相同
+    pub key: Option<String>,
+    pub hostinfo: Option<Hostinfo>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct Hostinfo {
+    pub net_info: Option<NetInfo>,
+}
+
+/// 设备自己网络检查的结论（各设备定期上报给控制端）
+#[derive(Deserialize, Default, Debug, Clone, PartialEq)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct NetInfo {
+    #[serde(rename = "WorkingIPv6")]
+    pub working_ipv6: Option<bool>,
+    #[serde(rename = "WorkingUDP")]
+    pub working_udp: Option<bool>,
+    /// true 表示 IPv4 是对称型 NAT
+    #[serde(rename = "MappingVariesByDestIP")]
+    pub mapping_varies_by_dest_ip: Option<bool>,
+}
+
+impl NetMapNode {
+    fn net_info(&self) -> Option<NetInfo> {
+        self.hostinfo.as_ref()?.net_info.clone()
+    }
+}
+
+impl NetMap {
+    pub fn self_net_info(&self) -> Option<NetInfo> {
+        self.self_node.as_ref()?.net_info()
+    }
+
+    /// 节点公钥 → 网络检查结论
+    pub fn peer_net_info(&self) -> HashMap<String, NetInfo> {
+        self.peers
+            .iter()
+            .flatten()
+            .filter_map(|p| Some((p.key.clone()?, p.net_info()?)))
+            .collect()
+    }
+}
+
 impl Status {
     /// 对端设备列表（不含本机），按名称排序，保证界面顺序稳定
     pub fn peers(&self) -> Vec<&PeerStatus> {
@@ -120,6 +178,12 @@ impl Status {
 
 /// 解析 netcheck 输出：前面可能有代理日志和 `# Warning` 行，从第一个 `{` 开始解析
 pub fn parse_netcheck(text: &str) -> Result<Netcheck, serde_json::Error> {
+    let start = text.find('{').unwrap_or(0);
+    serde_json::from_str(&text[start..])
+}
+
+/// 解析 netmap 输出，与 netcheck 一样从第一个 `{` 开始，容忍前面的日志行
+pub fn parse_netmap(text: &str) -> Result<NetMap, serde_json::Error> {
     let start = text.find('{').unwrap_or(0);
     serde_json::from_str(&text[start..])
 }
@@ -184,6 +248,22 @@ mod tests {
         let regions = d.regions.unwrap();
         assert_eq!(regions.len(), 29);
         assert_eq!(regions["999"].region_code.as_deref(), Some("headscale"));
+    }
+
+    #[test]
+    fn 解析_netmap_并按公钥对应() {
+        let n = parse_netmap(include_str!("../fixtures/netmap.json")).unwrap();
+        assert_eq!(n.self_net_info().unwrap().working_ipv6, Some(true));
+        // 工作笔记本：最近一次上报时没有 IPv6，IPv4 是对称型 NAT
+        let s: Status = serde_json::from_str(STATUS).unwrap();
+        let laptop = s
+            .peers()
+            .into_iter()
+            .find(|p| p.host_name.as_deref() == Some("work-laptop"))
+            .unwrap();
+        let info = &n.peer_net_info()[laptop.public_key.as_ref().unwrap()];
+        assert_eq!(info.working_ipv6, Some(false));
+        assert_eq!(info.mapping_varies_by_dest_ip, Some(true));
     }
 
     #[test]

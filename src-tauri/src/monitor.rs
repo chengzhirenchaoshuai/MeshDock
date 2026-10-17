@@ -1,7 +1,7 @@
 //! 后台定时读取组网状态：整理成快照推给前端，并更新托盘
-use crate::classify::{self, Conn, LocalNet, Regions};
+use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli::{self, CliError};
-use crate::model::{PeerStatus, Status, non_empty, time_ms};
+use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
 use crate::tray::{self, TrayState};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -33,6 +33,9 @@ pub struct Device {
     pub tx_bytes: Option<u64>,
     pub last_seen_ms: Option<i64>,
     pub last_handshake_ms: Option<i64>,
+    /// 节点公钥，只在后端用来对应 netmap，不发给前端
+    #[serde(skip)]
+    pub key: Option<String>,
 }
 
 /// 组网整体情况
@@ -80,8 +83,20 @@ struct Inner {
     local: Mutex<Arc<LocalNet>>,
     /// 设备 id → 本轮连续活跃的起始时间；None 表示还没观察过
     active_since: Mutex<Option<HashMap<String, Instant>>>,
+    /// 各设备上报的网络检查结论及读取时间，只在有设备走中继时才读取
+    net_infos: Mutex<Option<(Instant, Arc<NetInfos>)>>,
     wake: Notify,
 }
+
+/// netmap 中的网络检查结论：本机的，以及按节点公钥索引的各设备的
+#[derive(Default)]
+struct NetInfos {
+    me: Option<NetInfo>,
+    peers: HashMap<String, NetInfo>,
+}
+
+/// netmap 缓存多久，避免每次刷新都读取（约 34 KB）
+const NET_INFO_TTL: Duration = Duration::from_secs(30);
 
 impl Monitor {
     pub fn new() -> Self {
@@ -91,6 +106,7 @@ impl Monitor {
                 regions: Mutex::new(None),
                 local: Mutex::new(Arc::default()),
                 active_since: Mutex::new(None),
+                net_infos: Mutex::new(None),
                 wake: Notify::new(),
             }),
         }
@@ -154,6 +170,61 @@ impl Monitor {
         }
     }
 
+    /// 各设备上报的网络检查结论；缓存 30 秒，读取失败时沿用旧的
+    async fn net_infos(&self) -> Option<Arc<NetInfos>> {
+        let cached = self.inner.net_infos.lock().unwrap().clone();
+        if let Some((at, infos)) = &cached
+            && at.elapsed() < NET_INFO_TTL
+        {
+            return Some(infos.clone());
+        }
+        match cli::netmap().await {
+            Ok(map) => {
+                let infos = Arc::new(NetInfos {
+                    me: map.self_net_info(),
+                    peers: map.peer_net_info(),
+                });
+                *self.inner.net_infos.lock().unwrap() = Some((Instant::now(), infos.clone()));
+                Some(infos)
+            }
+            Err(_) => cached.map(|(_, infos)| infos),
+        }
+    }
+
+    /// 给走中继的设备补上可能的原因；没有设备走中继时不读取 netmap
+    async fn explain_relays(&self, peers: &mut [Device]) {
+        if !peers.iter().any(|d| d.conn.kind == ConnKind::Relay) {
+            return;
+        }
+        let Some(infos) = self.net_infos().await else {
+            return;
+        };
+        for d in peers.iter_mut() {
+            let peer = d.key.as_ref().and_then(|k| infos.peers.get(k));
+            let reason = classify::relay_reason(infos.me.as_ref(), peer);
+            d.conn = classify::with_relay_reason(d.conn.clone(), reason);
+        }
+    }
+
+    /// 测速结果是中继时补上原因：按 IP 在最近的快照里找到设备
+    pub async fn explain_ping(&self, ip: &str, conn: Conn) -> Conn {
+        if conn.kind != ConnKind::Relay {
+            return conn;
+        }
+        let key = self.latest().and_then(|s| {
+            s.overview?
+                .peers
+                .into_iter()
+                .find(|d| d.ips.iter().any(|a| a == ip))?
+                .key
+        });
+        let Some(infos) = self.net_infos().await else {
+            return conn;
+        };
+        let peer = key.as_ref().and_then(|k| infos.peers.get(k));
+        classify::with_relay_reason(conn, classify::relay_reason(infos.me.as_ref(), peer))
+    }
+
     /// 读取一次状态，保存快照、推给前端、更新托盘
     pub async fn refresh(&self, app: &AppHandle) -> Snapshot {
         let regions = self.regions().await;
@@ -161,11 +232,15 @@ impl Monitor {
         let (status, prefs) = tokio::join!(cli::status(), cli::prefs());
         let accept_routes = prefs.ok().and_then(|p| p.route_all);
         let snapshot = match status {
-            Ok(status) => Snapshot {
-                overview: Some(self.overview(&status, &regions, accept_routes)),
-                error: None,
-                updated_at_ms: now_ms(),
-            },
+            Ok(status) => {
+                let mut overview = self.overview(&status, &regions, accept_routes);
+                self.explain_relays(&mut overview.peers).await;
+                Snapshot {
+                    overview: Some(overview),
+                    error: None,
+                    updated_at_ms: now_ms(),
+                }
+            }
             Err(e) => Snapshot {
                 overview: None,
                 error: Some(e),
@@ -259,6 +334,7 @@ fn device(p: &PeerStatus, conn: Conn) -> Device {
         tx_bytes: p.tx_bytes,
         last_seen_ms: time_ms(p.last_seen.as_deref()),
         last_handshake_ms: time_ms(p.last_handshake.as_deref()),
+        key: p.public_key.clone(),
     }
 }
 
