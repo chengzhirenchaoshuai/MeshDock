@@ -58,10 +58,7 @@ pub struct SettingsStore {
 impl SettingsStore {
     /// 读取设置；文件不存在或损坏时使用默认值
     pub fn load(path: PathBuf) -> Self {
-        let current = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default();
+        let current = crate::paths::load_json(&path).unwrap_or_default();
         Self {
             path,
             current: Mutex::new(current),
@@ -75,13 +72,14 @@ impl SettingsStore {
     /// 修改并立即写盘
     pub fn update(&self, f: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
         let mut current = self.current.lock().unwrap();
-        f(&mut current);
-        if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("创建配置目录失败：{e}"))?;
-        }
-        let text = serde_json::to_string_pretty(&*current).map_err(|e| e.to_string())?;
-        std::fs::write(&self.path, text).map_err(|e| format!("保存设置失败：{e}"))?;
-        Ok(current.clone())
+        // 先在副本上修改，写盘成功后才替换内存中的设置，避免两者不一致
+        let mut next = current.clone();
+        f(&mut next);
+        let text = serde_json::to_string_pretty(&next).map_err(|e| e.to_string())?;
+        crate::paths::write_atomic(&self.path, text.as_bytes())
+            .map_err(|e| format!("保存设置失败：{e}"))?;
+        *current = next.clone();
+        Ok(next)
     }
 }
 
@@ -116,6 +114,9 @@ mod tests {
         let path = std::env::temp_dir().join(format!("meshdock-bad-{}.json", std::process::id()));
         std::fs::write(&path, "不是 JSON").unwrap();
         assert_eq!(SettingsStore::load(path.clone()).get().at_home, None);
-        std::fs::remove_file(path).unwrap();
+        // 坏文件被改名保留
+        let bak = std::path::PathBuf::from(format!("{}.bak", path.display()));
+        assert!(!path.exists() && bak.exists());
+        std::fs::remove_file(bak).unwrap();
     }
 }

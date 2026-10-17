@@ -40,10 +40,7 @@ pub struct HistoryStore {
 impl HistoryStore {
     /// 读取历史；文件不存在或损坏时从空开始
     pub fn load(path: PathBuf, now_ms: i64) -> Self {
-        let mut data: History = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let mut data: History = crate::paths::load_json(&path).unwrap_or_default();
         prune(&mut data, now_ms);
         Self {
             path,
@@ -55,25 +52,20 @@ impl HistoryStore {
         self.data.lock().unwrap().clone()
     }
 
-    /// 记录一批测量，去掉 24 小时前的，并写盘
+    /// 记录一批测量，去掉 24 小时前的，并写盘。
+    /// 持锁写盘：两批测量同时到达时，后写入的一定是较新的内容
     pub fn add(&self, samples: Vec<(String, Sample)>, now_ms: i64) {
-        let text = {
-            let mut data = self.data.lock().unwrap();
-            for (id, s) in samples {
-                let list = data.entry(id).or_default();
-                list.push(s);
-                list.sort_by_key(|s| s.at_ms);
-            }
-            prune(&mut data, now_ms);
-            serde_json::to_string(&*data)
-        };
-        if let Ok(text) = text {
-            if let Some(dir) = self.path.parent() {
-                let _ = std::fs::create_dir_all(dir);
-            }
-            if let Err(e) = std::fs::write(&self.path, text) {
-                crate::applog::error(format!("保存延迟历史失败：{e}"));
-            }
+        let mut data = self.data.lock().unwrap();
+        for (id, s) in samples {
+            let list = data.entry(id).or_default();
+            list.push(s);
+            list.sort_by_key(|s| s.at_ms);
+        }
+        prune(&mut data, now_ms);
+        if let Ok(text) = serde_json::to_string(&*data)
+            && let Err(e) = crate::paths::write_atomic(&self.path, text.as_bytes())
+        {
+            crate::applog::error(format!("保存延迟历史失败：{e}"));
         }
     }
 }
