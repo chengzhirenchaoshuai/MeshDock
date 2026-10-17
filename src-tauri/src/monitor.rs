@@ -135,6 +135,8 @@ pub struct Monitor {
 struct Inner {
     latest: Mutex<Option<Snapshot>>,
     regions: Mutex<Option<Arc<Regions>>>,
+    /// 中继区域表最近一次读取失败的时间，用于暂缓重试
+    regions_failed_at: Mutex<Option<Instant>>,
     /// 最近一次读到的本机网络信息，测速时判断局域网 IPv6 也要用
     local: Mutex<Arc<LocalNet>>,
     /// 设备 id → 本轮连续活跃的起始时间；None 表示还没观察过
@@ -158,6 +160,9 @@ struct NetInfos {
     peers: HashMap<String, Hostinfo>,
 }
 
+/// 中继区域表读取失败后，多久再重试
+const REGIONS_RETRY: Duration = Duration::from_secs(60);
+
 /// netmap 缓存多久，避免每次刷新都读取（约 34 KB）
 const NET_INFO_TTL: Duration = Duration::from_secs(30);
 
@@ -167,6 +172,7 @@ impl Monitor {
             inner: Arc::new(Inner {
                 latest: Mutex::new(None),
                 regions: Mutex::new(None),
+                regions_failed_at: Mutex::new(None),
                 local: Mutex::new(Arc::default()),
                 active_since: Mutex::new(None),
                 net_infos: Mutex::new(None),
@@ -266,10 +272,20 @@ impl Monitor {
         self.inner.latest.lock().unwrap().clone()
     }
 
-    /// 中继区域名称表；首次成功读取后缓存，失败时下次再试
+    /// 中继区域名称表；首次成功读取后缓存。读取失败后 REGIONS_RETRY 内不再重试，
+    /// 避免服务没运行时每次刷新都多起一个注定失败的进程
     pub async fn regions(&self) -> Arc<Regions> {
         if let Some(r) = self.inner.regions.lock().unwrap().clone() {
             return r;
+        }
+        let failed_recently = self
+            .inner
+            .regions_failed_at
+            .lock()
+            .unwrap()
+            .is_some_and(|at| at.elapsed() < REGIONS_RETRY);
+        if failed_recently {
+            return Arc::new(Regions::default());
         }
         match cli::derp_map().await {
             Ok(map) => {
@@ -277,7 +293,10 @@ impl Monitor {
                 *self.inner.regions.lock().unwrap() = Some(r.clone());
                 r
             }
-            Err(_) => Arc::new(Regions::default()),
+            Err(_) => {
+                *self.inner.regions_failed_at.lock().unwrap() = Some(Instant::now());
+                Arc::new(Regions::default())
+            }
         }
     }
 
