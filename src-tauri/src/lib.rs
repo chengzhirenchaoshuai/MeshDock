@@ -1,6 +1,7 @@
 mod classify;
 mod cli;
 mod commands;
+mod gateway;
 mod model;
 mod monitor;
 mod netcheck;
@@ -74,7 +75,6 @@ pub fn run() {
             commands::ping,
             commands::run_netcheck,
             commands::get_settings,
-            commands::set_at_home,
             commands::take_mode_request,
             commands::set_accept_routes,
             commands::save_settings,

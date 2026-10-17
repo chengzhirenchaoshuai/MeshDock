@@ -3,7 +3,8 @@ import { onMounted, ref } from "vue";
 import { Monitor, Moon, Sun } from "@lucide/vue";
 import { getAppInfo, type AppInfo, type Settings, type ThemeMode } from "../api";
 
-const props = defineProps<{ settings: Settings | null }>();
+/** gateways：当前读到的默认网关，方便直接选作家里网关 */
+const props = defineProps<{ settings: Settings | null; gateways: string[] }>();
 const emit = defineEmits<{ save: [settings: Settings] }>();
 
 const info = ref<AppInfo | null>(null);
@@ -18,6 +19,20 @@ const themes: { id: ThemeMode; label: string; icon: unknown }[] = [
 /** 改一项，整体保存 */
 function patch(change: Partial<Settings>) {
   if (props.settings) emit("save", { ...props.settings, ...change });
+}
+
+// ---------- 家里网关 ----------
+const gatewayError = ref<string | null>(null);
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
+function saveGateway(value: string) {
+  const v = value.trim();
+  if (!IPV4.test(v)) {
+    gatewayError.value = "请填写 IPv4 地址，例如 192.168.66.66";
+    return;
+  }
+  gatewayError.value = null;
+  if (v !== props.settings?.homeGateway) patch({ homeGateway: v });
 }
 </script>
 
@@ -38,6 +53,37 @@ function patch(change: Partial<Settings>) {
           {{ t.label }}
         </button>
       </div>
+    </div>
+
+    <!-- 位置识别 -->
+    <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 class="text-sm font-semibold">在家识别</h2>
+      <p class="text-xs text-muted">
+        本机的默认网关等于家里路由器地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
+      </p>
+      <label class="flex items-center gap-3 text-sm">
+        <span class="text-muted">家里路由器地址</span>
+        <input
+          class="num w-44 rounded-ctl border border-line bg-bg px-2 py-1 select-text focus:border-accent focus:outline-none"
+          :value="settings.homeGateway"
+          @change="saveGateway(($event.target as HTMLInputElement).value)"
+          @keydown.enter="($event.target as HTMLInputElement).blur()"
+        />
+      </label>
+      <p v-if="gatewayError" class="text-xs text-error">{{ gatewayError }}</p>
+      <p v-if="gateways.length" class="flex flex-wrap items-center gap-2 text-xs text-muted">
+        当前默认网关：
+        <button
+          v-for="g in gateways"
+          :key="g"
+          class="num rounded-full border border-line px-2 py-0.5 hover:border-accent hover:text-accent"
+          :title="`把 ${g} 设为家里路由器地址`"
+          @click="saveGateway(g)"
+        >
+          {{ g }}{{ g === settings.homeGateway ? "（家里）" : "" }}
+        </button>
+      </p>
+      <p v-else class="text-xs text-muted">当前读不到默认网关，设备页会改为手动标记。</p>
     </div>
 
     <!-- 启动 -->

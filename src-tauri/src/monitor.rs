@@ -1,7 +1,9 @@
 //! 后台定时读取组网状态：整理成快照推给前端，并更新托盘
 use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli::{self, CliError};
+use crate::gateway;
 use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
+use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -51,6 +53,34 @@ pub struct Overview {
     pub accept_routes: Option<bool>,
     /// 组网里发布了子网路由的设备
     pub subnet_routes: Vec<SubnetRoute>,
+    /// 本机在不在家
+    pub location: Location,
+}
+
+/// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记
+#[derive(Serialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Location {
+    /// None 表示无法判断（读不到网关且没有手动标记）
+    pub at_home: Option<bool>,
+    /// true 为按网关自动识别，false 为手动标记
+    pub auto: bool,
+    /// 当前所有默认网关
+    pub gateways: Vec<String>,
+    /// 设置中的家里网关
+    pub home_gateway: String,
+}
+
+/// 读取默认网关并判断位置
+fn locate(settings: &Settings) -> Location {
+    let gateways = gateway::default_gateways();
+    let auto = gateway::at_home(&gateways, &settings.home_gateway);
+    Location {
+        at_home: auto.or(settings.at_home),
+        auto: auto.is_some(),
+        gateways: gateways.iter().map(ToString::to_string).collect(),
+        home_gateway: settings.home_gateway.clone(),
+    }
 }
 
 /// 某台设备发布的子网路由
@@ -235,6 +265,7 @@ impl Monitor {
             Ok(status) => {
                 let mut overview = self.overview(&status, &regions, accept_routes);
                 self.explain_relays(&mut overview.peers).await;
+                overview.location = locate(&app.state::<SettingsStore>().get());
                 Snapshot {
                     overview: Some(overview),
                     error: None,
@@ -251,6 +282,13 @@ impl Monitor {
         tray::set_mode(app, accept_routes);
         *self.inner.latest.lock().unwrap() = Some(snapshot.clone());
         let _ = app.emit(SNAPSHOT_EVENT, &snapshot);
+        // 仅开发版：测试时把快照写到 MESHDOCK_DEBUG_DUMP 指定的文件，便于不看界面也能核对数据
+        #[cfg(debug_assertions)]
+        if let Some(path) = std::env::var_os("MESHDOCK_DEBUG_DUMP")
+            && let Ok(text) = serde_json::to_string_pretty(&snapshot)
+        {
+            let _ = std::fs::write(path, text);
+        }
         snapshot
     }
 
@@ -297,6 +335,7 @@ impl Monitor {
             peers,
             accept_routes,
             subnet_routes,
+            location: Location::default(),
         }
     }
 

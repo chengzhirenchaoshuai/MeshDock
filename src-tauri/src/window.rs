@@ -51,8 +51,11 @@ fn create(app: &AppHandle) -> Result<(), String> {
     if let Some(dir) = &app.state::<AppPaths>().webview_dir {
         builder = builder.data_directory(dir.clone());
     }
-    // 仅开发版：界面测试用。MESHDOCK_DEBUG_WINDOW 含 dark / light 时强制主题，
-    // 含 nofocus 时创建窗口不抢焦点
+    // 仅开发版：界面测试用。MESHDOCK_DEBUG_WINDOW 含 dark / light 时强制主题；
+    // 含 minimized 时先隐藏创建再最小化，窗口不会出现在屏幕上，也不抢焦点
+    #[cfg(debug_assertions)]
+    let test_minimized =
+        std::env::var("MESHDOCK_DEBUG_WINDOW").is_ok_and(|f| f.contains("minimized"));
     #[cfg(debug_assertions)]
     if let Ok(flags) = std::env::var("MESHDOCK_DEBUG_WINDOW") {
         if flags.contains("dark") {
@@ -60,13 +63,14 @@ fn create(app: &AppHandle) -> Result<(), String> {
         } else if flags.contains("light") {
             builder = builder.theme(Some(tauri::Theme::Light));
         }
-        if flags.contains("nofocus") {
-            builder = builder.focused(false);
+        if test_minimized {
+            builder = builder.visible(false).focused(false);
         }
     }
     let window = builder.build().map_err(|e| e.to_string())?;
     #[cfg(debug_assertions)]
-    if std::env::var("MESHDOCK_DEBUG_WINDOW").is_ok_and(|f| f.contains("nofocus")) {
+    if test_minimized {
+        let _ = window.minimize();
         return Ok(());
     }
     let _ = window.set_focus();

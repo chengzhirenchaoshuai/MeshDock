@@ -48,15 +48,6 @@ pub fn get_settings(store: State<'_, SettingsStore>) -> Settings {
     store.get()
 }
 
-/// 手动标记是否在家
-#[tauri::command]
-pub fn set_at_home(
-    at_home: Option<bool>,
-    store: State<'_, SettingsStore>,
-) -> Result<Settings, String> {
-    store.update(|s| s.at_home = at_home)
-}
-
 /// 取走托盘发起的模式切换请求（没有时返回 None）
 #[tauri::command]
 pub fn take_mode_request(pending: State<'_, PendingMode>) -> Option<bool> {
@@ -96,6 +87,10 @@ pub fn save_settings(
         crate::sync_autostart(&app, settings.launch_on_boot)?;
     }
     let saved = store.update(|s| *s = settings)?;
+    // 家里网关或手动标记变了，立即重新识别位置
+    if saved.home_gateway != old.home_gateway || saved.at_home != old.at_home {
+        app.state::<Monitor>().wake();
+    }
     if saved.theme != old.theme
         && let Some(window) = app.get_webview_window("main")
     {

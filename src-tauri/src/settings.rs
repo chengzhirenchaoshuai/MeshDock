@@ -3,15 +3,28 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
-    /// 用户手动标记“我现在在家”：true 在家，false 在外，None 没标记过（P1 改为自动识别网关）
+    /// 手动标记“我现在在家”：只在读不到网关、无法自动识别时使用
     pub at_home: Option<bool>,
+    /// 家里路由器的地址：默认网关等于它即为在家
+    pub home_gateway: String,
     /// 外观：跟随系统 / 浅色 / 深色
     pub theme: ThemeMode,
     /// 开机自启，默认关闭
     pub launch_on_boot: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            at_home: None,
+            home_gateway: "192.168.66.66".into(),
+            theme: ThemeMode::default(),
+            launch_on_boot: false,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -89,6 +102,7 @@ mod tests {
         assert_eq!(s.at_home, Some(true));
         assert_eq!(s.theme, ThemeMode::System);
         assert!(!s.launch_on_boot);
+        assert_eq!(s.home_gateway, "192.168.66.66");
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
     }

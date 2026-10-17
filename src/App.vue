@@ -10,7 +10,6 @@ import {
   refresh,
   saveSettings,
   setAcceptRoutes,
-  setAtHome,
   takeModeRequest,
   type CliError,
   type Device,
@@ -137,12 +136,9 @@ async function switchMode(on: boolean, fromDialog: boolean) {
   }
 }
 
-async function updateAtHome(atHome: true | null) {
-  try {
-    settings.value = await setAtHome(atHome);
-  } catch (e) {
-    showToast(String(e));
-  }
+/** 读不到网关时的手动标记 */
+function updateAtHome(atHome: true | null) {
+  if (settings.value) updateSettings({ ...settings.value, atHome });
 }
 
 async function updateSettings(next: Settings) {
@@ -243,7 +239,7 @@ onUnmounted(() => {
     </main>
 
     <main v-show="tab === 'settings'" class="flex-1 overflow-y-auto px-6 py-5">
-      <SettingsPanel :settings="settings" @save="updateSettings" />
+      <SettingsPanel :settings="settings" :gateways="overview?.location.gateways ?? []" @save="updateSettings" />
     </main>
 
     <main v-show="tab === 'devices'" class="flex-1 overflow-y-auto px-6 py-5">
@@ -305,7 +301,7 @@ onUnmounted(() => {
     <ModeConfirm
       v-if="confirmOn !== null"
       :on="confirmOn"
-      :at-home="settings?.atHome ?? null"
+      :at-home="overview?.location.atHome ?? null"
       :busy="modeBusy"
       :error="modeError"
       @confirm="switchMode(confirmOn, true)"

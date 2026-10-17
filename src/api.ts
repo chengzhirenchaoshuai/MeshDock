@@ -39,6 +39,15 @@ export interface SubnetRoute {
   routes: string[];
 }
 
+/** 在不在家：优先按默认网关自动识别，读不到网关时用手动标记 */
+export interface Location {
+  atHome: boolean | null;
+  /** true 为自动识别，false 为手动标记 */
+  auto: boolean;
+  gateways: string[];
+  homeGateway: string;
+}
+
 export interface Overview {
   backendState: string | null;
   controlUnreachable: boolean;
@@ -48,6 +57,7 @@ export interface Overview {
   /** 本机 accept-routes 实际值；读取失败为 null */
   acceptRoutes: boolean | null;
   subnetRoutes: SubnetRoute[];
+  location: Location;
 }
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
@@ -122,6 +132,8 @@ export type ThemeMode = "system" | "light" | "dark";
 export interface Settings {
   /** 手动标记的“我在家”：true 在家，false 在外，null 没标记过 */
   atHome: boolean | null;
+  /** 家里路由器地址：默认网关等于它即为在家 */
+  homeGateway: string;
   theme: ThemeMode;
   launchOnBoot: boolean;
 }
@@ -141,7 +153,6 @@ export interface AppInfo {
 export const getAppInfo = () => invoke<AppInfo>("get_app_info");
 
 export const getSettings = () => invoke<Settings>("get_settings");
-export const setAtHome = (atHome: boolean | null) => invoke<Settings>("set_at_home", { atHome });
 
 /** 切换在家（false）/ 出门（true）模式，返回切换后的快照 */
 export const setAcceptRoutes = (on: boolean) => invoke<Snapshot>("set_accept_routes", { on });

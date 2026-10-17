@@ -14,7 +14,17 @@ const emit = defineEmits<{
 }>();
 
 const mode = computed(() => props.overview.acceptRoutes);
-const atHome = computed(() => props.settings?.atHome ?? null);
+const location = computed(() => props.overview.location);
+const atHome = computed(() => location.value.atHome);
+
+/** 位置说明：自动识别时写明依据的网关 */
+const locationText = computed(() => {
+  const l = location.value;
+  if (!l.auto) return null;
+  return l.atHome
+    ? `在家（默认网关 ${l.homeGateway}）`
+    : `在外面（默认网关 ${l.gateways.join("、")}，不是家里的 ${l.homeGateway}）`;
+});
 
 /** 子网路由说明，例如“phone-router 的 192.168.66.0/24” */
 const routesText = computed(() => {
@@ -49,14 +59,18 @@ const options = computed(() => [
         <template v-else>{{ mode ? "出门模式" : "在家模式" }}（子网路由 accept-routes {{ mode ? "已开启" : "已关闭" }}）</template>
       </span>
       <LoaderCircle v-if="busy" class="size-4 animate-spin text-muted" />
-      <label class="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
+      <span v-if="locationText" class="ml-auto text-xs text-muted" title="按默认网关自动识别，可在“设置”中修改家里网关">
+        位置：{{ locationText }}
+      </span>
+      <!-- 读不到网关时退回手动标记 -->
+      <label v-else class="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
         <input
           type="checkbox"
           class="size-4 accent-[var(--md-accent)]"
-          :checked="atHome === true"
+          :checked="settings?.atHome === true"
           @change="emit('setAtHome', ($event.target as HTMLInputElement).checked || null)"
         />
-        我现在在家（用来提醒模式开错）
+        我现在在家（读不到网关，请手动标记）
       </label>
     </header>
 
@@ -75,6 +89,22 @@ const options = computed(() => [
         @click="emit('fixHome')"
       >
         一键改回在家模式
+      </button>
+    </div>
+    <!-- 在外面却没开出门模式：访问不到家里局域网 -->
+    <div
+      v-else-if="atHome === false && mode === false"
+      class="flex items-center gap-3 rounded-ctl px-3 py-2.5 text-sm"
+      style="color: var(--md-punching); background: color-mix(in srgb, var(--md-punching) 12%, transparent)"
+    >
+      <TriangleAlert class="size-5 shrink-0" />
+      <span class="flex-1">你在外面，但没开出门模式：访问不到家里局域网的设备。</span>
+      <button
+        class="shrink-0 rounded-ctl border border-current px-3 py-1 disabled:opacity-60"
+        :disabled="busy"
+        @click="emit('request', true)"
+      >
+        切换到出门模式
       </button>
     </div>
 

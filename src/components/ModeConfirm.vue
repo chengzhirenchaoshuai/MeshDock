@@ -21,7 +21,7 @@ const emit = defineEmits<{ confirm: []; cancel: [] }>();
         style="color: var(--md-error); background: color-mix(in srgb, var(--md-error) 12%, transparent)"
       >
         <TriangleAlert class="mt-0.5 size-4 shrink-0" />
-        你标记了“在家”。在家开启出门模式会让本地流量绕进隧道，可能断网，确定吗？
+        你现在在家。在家开启出门模式会让本地流量绕进隧道，可能断网，确定吗？
       </p>
       <details v-if="error" class="text-sm" open>
         <summary class="cursor-pointer select-none" style="color: var(--md-error)">{{ error.message }}</summary>
