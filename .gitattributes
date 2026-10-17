@@ -1,0 +1,5 @@
+# 统一使用 LF 换行
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
