@@ -1,0 +1,221 @@
+{
+  "Version": "1.102.4-t3caf7d9e7-g084ee3b64",
+  "TUN": true,
+  "BackendState": "Running",
+  "HaveNodeKey": true,
+  "AuthURL": "",
+  "TailscaleIPs": [
+    "100.64.0.1",
+    "fd7a:115c:a1e0::1"
+  ],
+  "Self": {
+    "ID": "1",
+    "NodeID": 1,
+    "PublicKey": "nodekey:ca71619149f13167c3d336c4d910bd24a4fc5de047c423a96164c1801a4b4515",
+    "HostName": "lan-desktop",
+    "DNSName": "lan-desktop.example.com.",
+    "OS": "windows",
+    "UserID": 1,
+    "TailscaleIPs": [
+      "100.64.0.1",
+      "fd7a:115c:a1e0::1"
+    ],
+    "AllowedIPs": [
+      "100.64.0.1/32",
+      "fd7a:115c:a1e0::1/128"
+    ],
+    "Addrs": [
+      "203.0.113.10:36994",
+      "[2001:db8::10]:61362",
+      "192.168.66.233:41641",
+      "192.168.81.1:41641",
+      "192.168.136.1:41641",
+      "198.18.0.1:41641",
+      "[2001:db8::11]:41641",
+      "[2001:db8::12]:41641",
+      "[2001:db8::10]:41641"
+    ],
+    "CurAddr": "",
+    "Relay": "headscale",
+    "PeerRelay": "",
+    "RxBytes": 0,
+    "TxBytes": 0,
+    "Created": "2026-09-20T12:27:24.740616946Z",
+    "LastWrite": "0001-01-01T00:00:00Z",
+    "LastSeen": "0001-01-01T00:00:00Z",
+    "LastHandshake": "0001-01-01T00:00:00Z",
+    "Online": true,
+    "ExitNode": false,
+    "ExitNodeOption": false,
+    "Active": false,
+    "PeerAPIURL": [
+      "http://100.64.0.1:58436",
+      "http://[fd7a:115c:a1e0::1]:59780"
+    ],
+    "TaildropTarget": 0,
+    "NoFileSharingReason": "",
+    "Capabilities": [
+      "HTTPS://TAILSCALE.COM/s/DEPRECATED-NODE-CAPS#see-https://github.com/tailscale/tailscale/issues/11508",
+      "default-auto-update",
+      "https://tailscale.com/cap/file-sharing",
+      "https://tailscale.com/cap/is-admin",
+      "https://tailscale.com/cap/ssh"
+    ],
+    "CapMap": {
+      "default-auto-update": [
+        false
+      ],
+      "https://tailscale.com/cap/file-sharing": [],
+      "https://tailscale.com/cap/is-admin": [],
+      "https://tailscale.com/cap/ssh": []
+    },
+    "InNetworkMap": true,
+    "InMagicSock": false,
+    "InEngine": false
+  },
+  "Health": [
+    "Some peers are advertising routes but --accept-routes is false"
+  ],
+  "MagicDNSSuffix": "example.com",
+  "CurrentTailnet": {
+    "Name": "203.0.113.11",
+    "MagicDNSSuffix": "example.com",
+    "MagicDNSEnabled": false
+  },
+  "CertDomains": null,
+  "ExtraRecords": null,
+  "Peer": {
+    "nodekey:5bb40c1ea2787efa6e6f426de90f953e5ee2014ef0eb572122efc26376b2a073": {
+      "ID": "2",
+      "NodeID": 2,
+      "PublicKey": "nodekey:5bb40c1ea2787efa6e6f426de90f953e5ee2014ef0eb572122efc26376b2a073",
+      "HostName": "phone-router",
+      "DNSName": "phone-router.example.com.",
+      "OS": "linux",
+      "UserID": 1,
+      "TailscaleIPs": [
+        "100.64.0.2",
+        "fd7a:115c:a1e0::2"
+      ],
+      "AllowedIPs": [
+        "100.64.0.2/32",
+        "192.168.66.0/24",
+        "fd7a:115c:a1e0::2/128"
+      ],
+      "PrimaryRoutes": [
+        "192.168.66.0/24"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "headscale",
+      "PeerRelay": "",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2026-09-20T12:51:17.026908992Z",
+      "LastWrite": "0001-01-01T00:00:00Z",
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.64.0.2:46590",
+        "http://[fd7a:115c:a1e0::2]:46590"
+      ],
+      "TaildropTarget": 1,
+      "NoFileSharingReason": "",
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:bc139074cba919a9b11fa5a39fae27e022c64d94760f90a28edf424c0f18835d": {
+      "ID": "4",
+      "NodeID": 4,
+      "PublicKey": "nodekey:bc139074cba919a9b11fa5a39fae27e022c64d94760f90a28edf424c0f18835d",
+      "HostName": "work-laptop",
+      "DNSName": "peng-work.example.com.",
+      "OS": "windows",
+      "UserID": 1,
+      "TailscaleIPs": [
+        "100.64.0.4",
+        "fd7a:115c:a1e0::4"
+      ],
+      "AllowedIPs": [
+        "100.64.0.4/32",
+        "fd7a:115c:a1e0::4/128"
+      ],
+      "Addrs": null,
+      "CurAddr": "",
+      "Relay": "headscale",
+      "PeerRelay": "",
+      "RxBytes": 0,
+      "TxBytes": 0,
+      "Created": "2026-09-21T00:43:56.07660638Z",
+      "LastWrite": "2026-10-17T14:08:40.1312896+08:00",
+      "LastSeen": "2026-10-16T18:17:15.250730444+08:00",
+      "LastHandshake": "0001-01-01T00:00:00Z",
+      "Online": false,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": false,
+      "PeerAPIURL": [
+        "http://100.64.0.4:37067",
+        "http://[fd7a:115c:a1e0::4]:40203"
+      ],
+      "TaildropTarget": 5,
+      "NoFileSharingReason": "",
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": false
+    },
+    "nodekey:f591affd81c3aa846ace1abf7520da69afaef60de93ad011ccf22ced0d3a5b5d": {
+      "ID": "3",
+      "NodeID": 3,
+      "PublicKey": "nodekey:f591affd81c3aa846ace1abf7520da69afaef60de93ad011ccf22ced0d3a5b5d",
+      "HostName": "ming-pc",
+      "DNSName": "ming-pc.example.com.",
+      "OS": "windows",
+      "UserID": 1,
+      "TailscaleIPs": [
+        "100.64.0.3",
+        "fd7a:115c:a1e0::3"
+      ],
+      "AllowedIPs": [
+        "100.64.0.3/32",
+        "fd7a:115c:a1e0::3/128"
+      ],
+      "Addrs": null,
+      "CurAddr": "[2001:db8::13]:41641",
+      "Relay": "headscale",
+      "PeerRelay": "",
+      "RxBytes": 167328884,
+      "TxBytes": 681490612,
+      "Created": "2026-09-20T13:26:35.754807595Z",
+      "LastWrite": "2026-10-17T14:50:21.7950414+08:00",
+      "LastSeen": "0001-01-01T00:00:00Z",
+      "LastHandshake": "2026-10-17T14:49:58.2727764+08:00",
+      "Online": true,
+      "ExitNode": false,
+      "ExitNodeOption": false,
+      "Active": true,
+      "PeerAPIURL": [
+        "http://100.64.0.3:34152",
+        "http://[fd7a:115c:a1e0::3]:34984"
+      ],
+      "TaildropTarget": 1,
+      "NoFileSharingReason": "",
+      "InNetworkMap": true,
+      "InMagicSock": true,
+      "InEngine": true
+    }
+  },
+  "User": {
+    "1": {
+      "ID": 1,
+      "LoginName": "peng",
+      "DisplayName": "peng"
+    }
+  },
+  "ClientVersion": null
+}

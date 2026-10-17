@@ -1,0 +1,35 @@
+{
+	"ControlURL": "https://203.0.113.1:8443",
+	"RouteAll": false,
+	"ExitNodeID": "",
+	"ExitNodeIP": "",
+	"InternalExitNodePrior": "",
+	"ExitNodeAllowLANAccess": false,
+	"CorpDNS": false,
+	"RunSSH": false,
+	"RunWebClient": false,
+	"WantRunning": true,
+	"LoggedOut": false,
+	"ShieldsUp": false,
+	"AdvertiseTags": null,
+	"Hostname": "lan-desktop",
+	"NotepadURLs": false,
+	"ForceDaemon": true,
+	"AdvertiseRoutes": null,
+	"AdvertiseServices": null,
+	"Sync": null,
+	"NoSNAT": false,
+	"NoStatefulFiltering": true,
+	"NetfilterMode": 2,
+	"AutoUpdate": {
+		"Check": true,
+		"Apply": false
+	},
+	"AppConnector": {
+		"Advertise": false
+	},
+	"PostureChecking": false,
+	"NetfilterKind": "",
+	"RemoteConfig": false,
+	"DriveShares": null
+}

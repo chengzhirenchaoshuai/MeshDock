@@ -1,0 +1,2 @@
+pong from phone-router (100.64.0.2) via DERP(headscale) in 82ms
+direct connection not established

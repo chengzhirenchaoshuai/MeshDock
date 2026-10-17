@@ -1,3 +1,10 @@
+// M3 接入界面前，部分接口暂未使用
+#[allow(dead_code)]
+mod classify;
+#[allow(dead_code)]
+mod cli;
+#[allow(dead_code)]
+mod model;
 mod tray;
 mod window;
 
