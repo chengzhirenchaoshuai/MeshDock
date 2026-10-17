@@ -45,7 +45,8 @@
 
 ```powershell
 pnpm install          # 安装前端依赖
-pnpm tauri dev        # 开发模式运行
+pnpm tauri dev        # 开发模式运行（与正式版共用数据，正式版在运行时只会唤出它的窗口）
+pnpm dev:test         # 开发模式，用测试标识 com.meshdock.test 运行：数据单独存放，可与正式版同时运行
 pnpm test             # 前端单元测试（后端测试在 src-tauri 下执行 cargo test）
 pnpm package          # 打包：安装版和免安装版都输出到项目根目录 release\
 ```
