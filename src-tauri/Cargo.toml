@@ -1,0 +1,28 @@
+[package]
+name = "meshdock"
+version = "0.1.0"
+description = "自建 Headscale 组网的中文图形客户端"
+authors = []
+edition = "2024"
+
+[lib]
+# 库名加 _lib 后缀，避免在 Windows 上与可执行文件同名冲突（cargo#8519）
+name = "meshdock_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 发布版体积优化，参见 https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

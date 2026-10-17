@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+/* 语义化颜色变量：组件只用这些名字，具体取值由下方浅色/深色提供 */
+@theme inline {
+  --color-bg: var(--md-bg);
+  --color-surface: var(--md-surface);
+  --color-subtle: var(--md-subtle);
+  --color-line: var(--md-line);
+  --color-fg: var(--md-fg);
+  --color-muted: var(--md-muted);
+  --color-faint: var(--md-faint);
+  --color-accent: var(--md-accent);
+  --color-accent-hover: var(--md-accent-hover);
+  --color-accent-fg: var(--md-accent-fg);
+  /* 连接状态色，全局统一：绿=直连、橙=中继、灰=离线、黄=打洞中、红=错误、蓝灰=在线空闲 */
+  --color-direct: var(--md-direct);
+  --color-relay: var(--md-relay);
+  --color-offline: var(--md-offline);
+  --color-punching: var(--md-punching);
+  --color-error: var(--md-error);
+  --color-idle: var(--md-idle);
+  --radius-card: 12px;
+  --radius-ctl: 8px;
+  --shadow-card: var(--md-shadow-card);
+  --font-sans: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
+}
+
+/* ---------- 浅色 ---------- */
+:root {
+  --md-bg: #f5f6f8;
+  --md-surface: #ffffff;
+  --md-subtle: #eef0f3;
+  --md-line: #e2e5ea;
+  --md-fg: #1b1f24;
+  --md-muted: #626a75;
+  --md-faint: #9aa1ab;
+  --md-accent: #0e7490;
+  --md-accent-hover: #0891b2;
+  --md-accent-fg: #ffffff;
+  --md-direct: #15803d;
+  --md-relay: #c2410c;
+  --md-offline: #8a919b;
+  --md-punching: #a16207;
+  --md-error: #be123c;
+  --md-idle: #5b7083;
+  --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04);
+  color-scheme: light;
+}
+
+/* ---------- 深色（暂时跟随系统，P1 再加手动切换） ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-bg: #15181c;
+    --md-surface: #1e2227;
+    --md-subtle: #262b31;
+    --md-line: #323840;
+    --md-fg: #e8eaed;
+    --md-muted: #a0a7b1;
+    --md-faint: #6b727c;
+    --md-accent: #22b8d6;
+    --md-accent-hover: #4cc9e2;
+    --md-accent-fg: #0b1a1f;
+    --md-direct: #4ade80;
+    --md-relay: #fb923c;
+    --md-offline: #8a919b;
+    --md-punching: #facc15;
+    --md-error: #fb7185;
+    --md-idle: #94a8ba;
+    --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--md-bg);
+  color: var(--md-fg);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* 数字和 IP 用等宽字体 */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
