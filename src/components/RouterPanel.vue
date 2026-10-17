@@ -13,7 +13,8 @@ const levelStyle: Record<Level, { icon: unknown; color: string; label: string }>
   warn: { icon: CircleAlert, color: "var(--md-punching)", label: "注意" },
   bad: { icon: CircleX, color: "var(--md-error)", label: "有问题" },
 };
-const overall = computed(() => levelStyle[props.router.level]);
+/** 右上角总体徽标：最严重的只是“说明”时也算正常，用绿色对勾，避免灰色的“正常”看起来像不可用 */
+const overall = computed(() => levelStyle[props.router.level === "info" ? "good" : props.router.level]);
 
 /** 设备信息一行：延迟、版本、型号、系统 */
 const meta = computed(() => {
