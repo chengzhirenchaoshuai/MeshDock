@@ -1,5 +1,5 @@
 // 底部操作提示：成功或失败由调用方明确指定，不再靠文字内容判断
-import { onUnmounted, ref } from "vue";
+import { getCurrentInstance, onUnmounted, ref } from "vue";
 
 export type ToastKind = "ok" | "error";
 
@@ -13,15 +13,16 @@ const DURATION_MS = 2500;
 
 export function useToast() {
   const toast = ref<Toast | null>(null);
-  let timer: number | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   function show(text: string, kind: ToastKind = "ok") {
     toast.value = { text, kind };
     clearTimeout(timer);
-    timer = window.setTimeout(() => (toast.value = null), DURATION_MS);
+    timer = setTimeout(() => (toast.value = null), DURATION_MS);
   }
 
-  onUnmounted(() => clearTimeout(timer));
+  // 在组件中使用时，卸载后清掉计时器
+  if (getCurrentInstance()) onUnmounted(() => clearTimeout(timer));
 
   return {
     toast,

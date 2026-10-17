@@ -46,6 +46,7 @@
 ```powershell
 pnpm install          # 安装前端依赖
 pnpm tauri dev        # 开发模式运行
+pnpm test             # 前端单元测试（后端测试在 src-tauri 下执行 cargo test）
 pnpm package          # 打包：安装版和免安装版都输出到项目根目录 release\
 ```
 
