@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { backendLabel, clock, connTone, formatBytes, formatLatency, timeAgo } from "./format";
+import type { PingRecord, Sample } from "./api";
+import { backendLabel, clock, connTone, formatBytes, formatLatency, kindLabel, measureLine, timeAgo } from "./format";
 
 describe("formatBytes", () => {
   it("未知、整数和小数", () => {
@@ -62,5 +63,54 @@ describe("formatLatency", () => {
     expect(formatLatency(0.43)).toBe("0.4 ms");
     expect(formatLatency(1)).toBe("1 ms");
     expect(formatLatency(12.6)).toBe("13 ms");
+  });
+});
+
+describe("kindLabel", () => {
+  it("直连、中继和未知", () => {
+    expect(kindLabel("lan")).toBe("局域网直连");
+    expect(kindLabel("peer-relay")).toBe("中继");
+    expect(kindLabel(null)).toBe("");
+  });
+});
+
+describe("measureLine", () => {
+  const now = 1_000_000_000;
+  const sample = (agoMs: number, ms: number | null, kind: Sample["kind"] = "lan"): Sample => ({
+    atMs: now - agoMs,
+    ms,
+    kind: ms == null ? null : kind,
+  });
+  const manual = (agoMs: number): PingRecord => ({
+    result: { conn: { kind: "relay", label: "中继（经 广州）", hint: null }, latencyMs: 35, error: null, raw: "pong" },
+    error: null,
+    atMs: now - agoMs,
+  });
+
+  it("都没有时显示延迟未测", () => {
+    expect(measureLine(undefined, undefined, now).text).toBe("延迟未测");
+    expect(measureLine(undefined, [], now).text).toBe("延迟未测");
+  });
+
+  it("没有手动测试时用延迟历史的最近一次", () => {
+    const line = measureLine(undefined, [sample(600_000, 9), sample(180_000, 2.3)], now);
+    expect(line).toEqual({ text: "延迟 2.3 ms · 局域网直连 · 3 分钟前测得", failed: false, raw: "" });
+  });
+
+  it("最近一次没有回应时标为失败", () => {
+    const line = measureLine(undefined, [sample(120_000, null)], now);
+    expect(line.text).toBe("2 分钟前测速没有回应");
+    expect(line.failed).toBe(true);
+  });
+
+  it("手动测试与历史中同一次时用手动结果", () => {
+    const line = measureLine(manual(60_000), [sample(61_000, 35, "relay")], now);
+    expect(line.text).toMatch(/^延迟 35 ms · 中继（经 广州） · .* 实测$/);
+    expect(line.raw).toBe("pong");
+  });
+
+  it("后台测速比手动测试新时用后台结果", () => {
+    const line = measureLine(manual(600_000), [sample(30_000, 3)], now);
+    expect(line.text).toBe("延迟 3 ms · 局域网直连 · 刚刚测得");
   });
 });

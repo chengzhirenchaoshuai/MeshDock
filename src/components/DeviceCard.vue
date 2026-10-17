@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { ArrowDown, ArrowUp, Copy, Gauge, LoaderCircle } from "@lucide/vue";
 import type { Device, PingRecord, Sample } from "../api";
 import LatencyChart from "./LatencyChart.vue";
-import { clock, connTone, formatBytes, formatLatency, timeAgo } from "../format";
+import { connTone, formatBytes, measureLine, timeAgo } from "../format";
 import ConnBadge from "./ConnBadge.vue";
 import OsIcon from "./OsIcon.vue";
 
@@ -39,25 +39,20 @@ const conn = computed(() => {
 });
 const hintColor = computed(() => `var(--md-${connTone(conn.value.kind)})`);
 
-/** 测速行：延迟和实测路径，或失败原因 */
-const pingLine = computed(() => {
-  const p = props.ping;
-  if (!p) return { text: "延迟未测", failed: false, raw: "" };
-  const at = clock(p.atMs);
-  if (p.error) return { text: `测试出错：${p.error.message}（${at}）`, failed: true, raw: p.error.raw };
-  const r = p.result!;
-  if (!r.conn || r.latencyMs == null) {
-    return { text: `${r.error ?? "测试失败"}（${at}）`, failed: true, raw: r.raw };
-  }
-  return { text: `延迟 ${formatLatency(r.latencyMs)} · ${r.conn.label} · ${at} 实测`, failed: false, raw: r.raw };
-});
+/** 测速行：最近一次测量（手动测试或后台测速）的延迟和路径，或失败原因 */
+const pingLine = computed(() => measureLine(props.ping, props.history, props.now));
 
 /** 时间信息：离线显示最后在线，在线显示最近握手 */
 const timeLine = computed(() => {
   const d = props.device;
-  if (offline.value) return `最后在线 ${timeAgo(d.lastSeenMs, props.now)}`;
+  if (offline.value) return { text: `最后在线 ${timeAgo(d.lastSeenMs, props.now)}`, title: undefined };
   if (isSelf.value) return null;
-  return d.lastHandshakeMs ? `最近握手 ${timeAgo(d.lastHandshakeMs, props.now)}` : "还没有握手过";
+  if (d.lastHandshakeMs) return { text: `最近握手 ${timeAgo(d.lastHandshakeMs, props.now)}`, title: undefined };
+  return {
+    text: "还没有数据往来",
+    title:
+      "本机和这台设备之间还没有建立过加密连接，所以没有握手记录、流量为 0。连接方式和测速使用的是 Tailscale 自己的探测包，不需要加密连接；真正访问这台设备（如 SSH、远程桌面）后就会有握手和流量。",
+  };
 });
 </script>
 
@@ -149,7 +144,7 @@ const timeLine = computed(() => {
           <ArrowUp class="size-3.5" />{{ formatBytes(device.txBytes) }}
         </span>
       </template>
-      <span v-if="timeLine" class="ml-auto truncate">{{ timeLine }}</span>
+      <span v-if="timeLine" class="ml-auto truncate" :title="timeLine.title">{{ timeLine.text }}</span>
     </footer>
   </article>
 </template>

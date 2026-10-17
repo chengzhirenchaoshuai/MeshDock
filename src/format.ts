@@ -1,5 +1,5 @@
 // 展示用的格式化工具
-import type { ConnKind } from "./api";
+import type { ConnKind, PingRecord, Sample } from "./api";
 
 /** 字节数 → 1.2 MB */
 export function formatBytes(n: number | null): string {
@@ -73,4 +73,52 @@ export function connTone(kind: ConnKind): string {
 /** 延迟毫秒 → “1 ms” / “0.4 ms” */
 export function formatLatency(ms: number): string {
   return ms < 10 ? `${Number(ms.toFixed(1))} ms` : `${Math.round(ms)} ms`;
+}
+
+/** 实测路径 → 简短中文（延迟历史只记了路径类型，没有完整说明） */
+export function kindLabel(kind: ConnKind | null): string {
+  switch (kind) {
+    case "lan":
+      return "局域网直连";
+    case "ipv6":
+      return "IPv6 直连";
+    case "public":
+      return "公网直连";
+    case "relay":
+    case "peer-relay":
+      return "中继";
+    default:
+      return "";
+  }
+}
+
+/** 设备卡片的测速行 */
+export interface MeasureLine {
+  text: string;
+  /** 失败时用错误色显示 */
+  failed: boolean;
+  /** 悬停显示的原始输出 */
+  raw: string;
+}
+
+/**
+ * 测速行：取手动测试结果和延迟历史中较新的一次。
+ * 手动测试也会记入历史，时间相差几秒内视为同一次，优先用手动结果（信息更全，有失败原因）
+ */
+export function measureLine(ping: PingRecord | undefined, history: Sample[] | undefined, now: number): MeasureLine {
+  const last = history && history.length ? history[history.length - 1] : undefined;
+  if (ping && (!last || ping.atMs >= last.atMs - 5_000)) {
+    const at = clock(ping.atMs);
+    if (ping.error) return { text: `测试出错：${ping.error.message}（${at}）`, failed: true, raw: ping.error.raw };
+    const r = ping.result!;
+    if (!r.conn || r.latencyMs == null) return { text: `${r.error ?? "测试失败"}（${at}）`, failed: true, raw: r.raw };
+    return { text: `延迟 ${formatLatency(r.latencyMs)} · ${r.conn.label} · ${at} 实测`, failed: false, raw: r.raw };
+  }
+  if (last) {
+    const when = timeAgo(last.atMs, now);
+    if (last.ms == null) return { text: `${when}测速没有回应`, failed: true, raw: "" };
+    const parts = [`延迟 ${formatLatency(last.ms)}`, kindLabel(last.kind), `${when}测得`].filter(Boolean);
+    return { text: parts.join(" · "), failed: false, raw: "" };
+  }
+  return { text: "延迟未测", failed: false, raw: "" };
 }

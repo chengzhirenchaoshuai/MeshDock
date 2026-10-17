@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert } from "@lucide/vue";
+import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert, Unplug } from "@lucide/vue";
 import {
   connect,
   disconnect,
@@ -52,6 +52,8 @@ const { toast, showOk, showError } = useToast();
 const overview = computed(() => snapshot.value?.overview ?? null);
 const peers = computed(() => overview.value?.peers ?? []);
 const onlineCount = computed(() => peers.value.filter((p) => p.conn.kind !== "offline").length);
+/** 组网没在运行（已断开、需要登录等）：设备列表是断开前的旧信息 */
+const linkDown = computed(() => !!overview.value && overview.value.backendState !== "Running");
 const { pings, testing, testOne, testablePeers, testingAll, testAll } = usePing(
   peers,
   () => (now.value = Date.now()),
@@ -222,7 +224,7 @@ onUnmounted(() => {
         {{ overall.label }}
       </span>
       <span v-if="overview" class="text-xs text-muted">
-        {{ peers.length }} 台设备 · {{ onlineCount }} 台在线
+        {{ peers.length }} 台设备<template v-if="!linkDown"> · {{ onlineCount }} 台在线</template>
       </span>
       <!-- 连接 / 断开组网：断开需二次确认，连接直接执行 -->
       <button
@@ -250,7 +252,7 @@ onUnmounted(() => {
       <button
         v-if="overview && tab === 'devices'"
         class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
-        :disabled="testingAll || testablePeers.length === 0"
+        :disabled="testingAll || linkDown || testablePeers.length === 0"
         title="测试所有在线设备的实际路径和延迟"
         @click="testAll"
       >
@@ -313,7 +315,24 @@ onUnmounted(() => {
           @set-at-home="updateAtHome"
         />
 
-        <RouterPanel v-for="r in overview.routers" :key="r.name" class="mb-6" :router="r" :now="now" />
+        <!-- 组网断开时，下面的路由器和设备是断开前的旧信息：说明并调暗 -->
+        <div
+          v-if="linkDown"
+          class="mb-6 flex items-start gap-2 rounded-card border px-4 py-3 text-sm"
+          :style="{
+            borderColor: 'color-mix(in srgb, var(--md-offline) 40%, transparent)',
+            background: 'color-mix(in srgb, var(--md-offline) 10%, transparent)',
+          }"
+        >
+          <Unplug class="mt-0.5 size-4 shrink-0 text-muted" />
+          <p>
+            组网{{ backendLabel(overview.backendState) }}：下面的子网路由器和设备是断开前最后看到的信息，可能已经过时。点顶栏“连接”重新加入组网后会自动更新。
+          </p>
+        </div>
+
+        <div :class="{ 'pointer-events-none opacity-50 select-none': linkDown }" :aria-disabled="linkDown">
+          <RouterPanel v-for="r in overview.routers" :key="r.name" class="mb-6" :router="r" :now="now" />
+        </div>
 
         <!-- 本机 -->
         <section v-if="overview.selfDevice" class="mb-6">
@@ -329,7 +348,7 @@ onUnmounted(() => {
         </section>
 
         <!-- 其他设备 -->
-        <section>
+        <section :class="{ 'pointer-events-none opacity-50 select-none': linkDown }" :aria-disabled="linkDown">
           <h2 class="mb-2 text-xs font-medium text-muted">组网设备</h2>
           <p v-if="peers.length === 0" class="py-12 text-center text-muted">
             组网里还没有其他设备

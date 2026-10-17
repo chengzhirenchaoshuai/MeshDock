@@ -287,6 +287,8 @@ impl Monitor {
         let targets: Vec<(String, String)> = self
             .latest()
             .and_then(|s| s.overview)
+            // 组网断开时设备列表是断开前的旧信息，测出来的“无回应”会把小图画错，跳过
+            .filter(|o| o.backend_state.as_deref() == Some("Running"))
             .map(|o| o.peers)
             .unwrap_or_default()
             .into_iter()
