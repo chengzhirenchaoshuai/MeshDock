@@ -185,3 +185,8 @@ export type History = Record<string, Sample[]>;
 export const getHistory = () => invoke<History>("get_history");
 export const onHistory = (cb: (h: History) => void): Promise<UnlistenFn> =>
   listen<History>("history", (e) => cb(e.payload));
+
+/** 生成诊断报告（已打码），约 5 秒 */
+export const buildReport = () => invoke<string>("build_report");
+/** 保存到“下载”文件夹并在资源管理器中选中，返回文件路径 */
+export const saveReport = (text: string) => invoke<string>("save_report", { text });

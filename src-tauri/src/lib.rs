@@ -9,6 +9,7 @@ mod monitor;
 mod netcheck;
 mod notify;
 mod paths;
+mod report;
 mod settings;
 mod tray;
 mod window;
@@ -83,6 +84,8 @@ pub fn run() {
             commands::refresh,
             commands::ping,
             commands::get_history,
+            commands::build_report,
+            commands::save_report,
             commands::run_netcheck,
             commands::get_settings,
             commands::take_mode_request,

@@ -5,6 +5,7 @@ use crate::history::{History, HistoryStore, Sample};
 use crate::monitor::{Monitor, Snapshot};
 use crate::netcheck::{self, Report};
 use crate::paths::AppPaths;
+use crate::report;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::PendingMode;
 use tauri::{AppHandle, Manager, State};
@@ -153,4 +154,60 @@ pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| format!("打开 RustDesk 失败：{e}"))
+}
+
+/// 生成诊断报告（已打码）：先刷新状态，再读取 status、prefs、netcheck 的原始输出
+#[tauri::command]
+pub async fn build_report(app: AppHandle, monitor: State<'_, Monitor>) -> Result<String, String> {
+    let snapshot = monitor.refresh(&app).await;
+    let regions = monitor.regions().await;
+    let (status, prefs, nc) = tokio::join!(
+        cli::run_checked(&["status", "--json"]),
+        cli::run_checked(&["debug", "prefs"]),
+        cli::run_checked(&["netcheck", "--format=json"]),
+    );
+    let failed = |e: &CliError| format!("读取失败：{}\n{}", e.message, e.raw);
+    let health = status
+        .as_ref()
+        .ok()
+        .and_then(|o| serde_json::from_str::<crate::model::Status>(&o.stdout).ok())
+        .and_then(|s| s.health)
+        .unwrap_or_default();
+    let nc_report = nc
+        .as_ref()
+        .ok()
+        .and_then(|o| crate::model::parse_netcheck(&o.stdout).ok())
+        .map(|n| netcheck::report(&n, &regions, crate::monitor::now_ms()));
+    let input = report::Input {
+        version: &app.package_info().version.to_string(),
+        generated_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        overview: snapshot.overview.as_ref(),
+        snapshot_error: snapshot.error.as_ref().map(|e| e.message.as_str()),
+        netcheck: nc_report.as_ref(),
+        health,
+        raw_status: status.as_ref().map_or_else(failed, |o| o.stdout.clone()),
+        raw_prefs: prefs
+            .as_ref()
+            .map_or_else(failed, |o| report::strip_prefs(&o.stdout)),
+        raw_netcheck: nc.as_ref().map_or_else(failed, |o| o.text()),
+    };
+    Ok(report::compose(&input))
+}
+
+/// 把报告保存到“下载”文件夹并在资源管理器中选中，返回文件路径
+#[tauri::command]
+pub fn save_report(text: String, app: AppHandle) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("找不到下载文件夹：{e}"))?;
+    let name = format!(
+        "MeshDock诊断报告-{}.txt",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    let path = dir.join(name);
+    std::fs::write(&path, text).map_err(|e| format!("保存失败：{e}"))?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.display().to_string())
 }

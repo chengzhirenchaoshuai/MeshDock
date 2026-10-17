@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { CircleAlert, CircleCheck, CircleX, Info, LoaderCircle, Stethoscope } from "@lucide/vue";
+import { CircleAlert, CircleCheck, CircleX, FileText, Info, LoaderCircle, Stethoscope } from "@lucide/vue";
 import { runNetcheck, type CliError, type Level, type NetcheckReport } from "../api";
 import { clock, formatLatency } from "../format";
 import ErrorView from "./ErrorView.vue";
+import ReportDialog from "./ReportDialog.vue";
 
 const report = ref<NetcheckReport | null>(null);
 const error = ref<CliError | null>(null);
 const busy = ref(false);
+const showReport = ref(false);
 
 async function run() {
   if (busy.value) return;
@@ -45,7 +47,15 @@ const official = computed(() => report.value?.regions.filter((r) => !r.selfHoste
         </p>
       </div>
       <button
-        class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-ctl bg-accent px-4 py-1.5 text-sm text-accent-fg hover:bg-accent-hover disabled:opacity-60"
+        class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-ctl border border-line px-3 py-1.5 text-sm hover:bg-subtle"
+        title="汇总状态、体检结果和设置，公网地址自动打码，方便发给运维"
+        @click="showReport = true"
+      >
+        <FileText class="size-4" />
+        导出诊断报告
+      </button>
+      <button
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-ctl bg-accent px-4 py-1.5 text-sm text-accent-fg hover:bg-accent-hover disabled:opacity-60"
         :disabled="busy"
         @click="run"
       >
@@ -54,6 +64,7 @@ const official = computed(() => report.value?.regions.filter((r) => !r.selfHoste
         {{ busy ? "正在体检…" : report ? "重新体检" : "开始体检" }}
       </button>
     </div>
+    <ReportDialog v-if="showReport" @close="showReport = false" />
 
     <ErrorView v-if="error && !busy" :error="error" :busy="busy" @retry="run" />
 
