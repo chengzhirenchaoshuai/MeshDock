@@ -145,6 +145,9 @@ struct Inner {
     paths: Mutex<PathWatcher>,
     mismatch: Mutex<MismatchWatcher>,
     wake: Notify,
+    /// 刷新排队执行：后台循环、手动刷新、连接 / 断开、切换模式可能同时发起刷新，
+    /// 不加锁时先开始的刷新可能后结束，用旧快照覆盖新快照，通知判断也会被重复推进
+    refreshing: tokio::sync::Mutex<()>,
 }
 
 /// netmap 中的网络检查结论：本机的，以及按节点公钥索引的各设备的
@@ -170,6 +173,7 @@ impl Monitor {
                 paths: Mutex::new(PathWatcher::default()),
                 mismatch: Mutex::new(MismatchWatcher::default()),
                 wake: Notify::new(),
+                refreshing: tokio::sync::Mutex::new(()),
             }),
         }
     }
@@ -405,6 +409,7 @@ impl Monitor {
 
     /// 读取一次状态，保存快照、推给前端、更新托盘
     pub async fn refresh(&self, app: &AppHandle) -> Snapshot {
+        let _guard = self.inner.refreshing.lock().await;
         let regions = self.regions().await;
         // 状态和设置同时读取；设置读不到不影响设备列表
         let (status, prefs) = tokio::join!(cli::status(), cli::prefs());
@@ -430,7 +435,8 @@ impl Monitor {
         };
         tray::set_state(app, tray_state(&snapshot));
         tray::set_mode(app, accept_routes);
-        *self.inner.latest.lock().unwrap() = Some(snapshot.clone());
+        let previous = self.inner.latest.lock().unwrap().replace(snapshot.clone());
+        log_error_change(previous.as_ref(), &snapshot);
         let _ = app.emit(SNAPSHOT_EVENT, &snapshot);
         // 仅开发版：测试时把快照写到 MESHDOCK_DEBUG_DUMP 指定的文件，便于不看界面也能核对数据
         #[cfg(debug_assertions)]
@@ -541,6 +547,18 @@ fn device(p: &PeerStatus, conn: Conn) -> Device {
         last_handshake_ms: time_ms(p.last_handshake.as_deref()),
         key: p.public_key.clone(),
         ssh_alias: None,
+    }
+}
+
+/// 读取状态出错、恢复或错误类型变化时记入日志；状态不变时不重复记录
+fn log_error_change(previous: Option<&Snapshot>, current: &Snapshot) {
+    let before = previous.and_then(|s| s.error.as_ref()).map(|e| e.kind);
+    match (&current.error, before) {
+        (Some(e), b) if b != Some(e.kind) => {
+            crate::applog::error(format!("读取组网状态失败：{}\n{}", e.message, e.raw));
+        }
+        (None, Some(_)) => crate::applog::info("读取组网状态已恢复"),
+        _ => {}
     }
 }
 
