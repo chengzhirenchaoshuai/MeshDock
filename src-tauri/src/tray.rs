@@ -32,8 +32,27 @@ impl PendingMode {
     }
 }
 
-/// 托盘底图：32×32 应用图标，状态圆点画在它上面
-const BASE_ICON: &[u8] = include_bytes!("../icons/32x32.png");
+/// 托盘底图：256×256 托盘专用图标（由 tray-icon.svg 渲染），按系统托盘尺寸缩小后再画状态圆点
+const BASE_ICON: &[u8] = include_bytes!("../icons/tray-256.png");
+
+/// 系统托盘图标的实际像素尺寸，随显示缩放变化（100% 为 16，125% 为 20，150% 为 24）。
+/// 直接按这个尺寸生成图标，Windows 不再二次缩放，边缘清晰
+#[cfg(windows)]
+fn tray_size() -> u32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSMICON};
+    // SAFETY: 只读取系统度量值，没有指针参数
+    let n = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    if (16..=256).contains(&n) {
+        n as u32
+    } else {
+        32
+    }
+}
+
+#[cfg(not(windows))]
+fn tray_size() -> u32 {
+    32
+}
 
 /// 组网的整体状态，决定托盘圆点颜色和悬停提示
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -70,6 +89,7 @@ impl TrayState {
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
+    crate::applog::info(format!("托盘图标尺寸：{} 像素", tray_size()));
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon_for(TrayState::Unknown)?)
         .tooltip(tooltip_for(TrayState::Unknown))
@@ -173,19 +193,58 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 
 fn icon_for(state: TrayState) -> tauri::Result<Image<'static>> {
     let base = Image::from_bytes(BASE_ICON)?;
-    let (w, h) = (base.width(), base.height());
+    let n = tray_size();
+    let small = downscale(base.rgba(), base.width(), base.height(), n, n);
     let rgba = match state.dot_color() {
-        Some(color) => draw_dot(base.rgba(), w, h, color),
-        None => base.rgba().to_vec(),
+        Some(color) => draw_dot(&small, n, n, color),
+        None => small,
     };
-    Ok(Image::new_owned(rgba, w, h))
+    Ok(Image::new_owned(rgba, n, n))
+}
+
+/// 面积平均缩小：每个目标像素取它覆盖的源像素按面积加权的平均值。
+/// 颜色按 alpha 预乘后再平均，避免透明边缘发黑
+fn downscale(src: &[u8], sw: u32, sh: u32, dw: u32, dh: u32) -> Vec<u8> {
+    let (fx, fy) = (sw as f32 / dw as f32, sh as f32 / dh as f32);
+    // 源像素 [p, p+1) 与区间 [lo, hi) 的重叠长度
+    let overlap = |p: u32, lo: f32, hi: f32| (hi.min(p as f32 + 1.0) - lo.max(p as f32)).max(0.0);
+    let mut out = vec![0u8; (dw * dh * 4) as usize];
+    for dy in 0..dh {
+        let (y0, y1) = (dy as f32 * fy, (dy + 1) as f32 * fy);
+        for dx in 0..dw {
+            let (x0, x1) = (dx as f32 * fx, (dx + 1) as f32 * fx);
+            let mut acc = [0f32; 4];
+            let mut area = 0f32;
+            for sy in y0.floor() as u32..(y1.ceil() as u32).min(sh) {
+                let wy = overlap(sy, y0, y1);
+                for sx in x0.floor() as u32..(x1.ceil() as u32).min(sw) {
+                    let w = wy * overlap(sx, x0, x1);
+                    let i = ((sy * sw + sx) * 4) as usize;
+                    let a = src[i + 3] as f32 / 255.0;
+                    for c in 0..3 {
+                        acc[c] += src[i + c] as f32 * a * w;
+                    }
+                    acc[3] += a * w;
+                    area += w;
+                }
+            }
+            let o = ((dy * dw + dx) * 4) as usize;
+            if area > 0.0 && acc[3] > 0.0 {
+                for c in 0..3 {
+                    out[o + c] = (acc[c] / acc[3]).round() as u8;
+                }
+                out[o + 3] = (acc[3] / area * 255.0).round() as u8;
+            }
+        }
+    }
+    out
 }
 
 /// 在右下角画状态圆点，并在圆点外挖出一圈透明边，让圆点和底图分开（边缘做抗锯齿）
 fn draw_dot(base: &[u8], w: u32, h: u32, color: [u8; 3]) -> Vec<u8> {
     let size = w.min(h) as f32;
-    let r = size * 0.27; // 圆点半径
-    let gap = size * 0.07; // 透明边宽度
+    let r = size * 0.2; // 圆点半径：20 像素的托盘图标上直径 8 像素
+    let gap = size * 0.06; // 透明边宽度
     let (cx, cy) = (w as f32 - r, h as f32 - r);
     let mut out = base.to_vec();
     for y in 0..h {
@@ -231,6 +290,21 @@ mod tests {
         let base: Vec<u8> = (0..32 * 32 * 4).map(|v| (v % 251) as u8).collect();
         let out = draw_dot(&base, 32, 32, [1, 2, 3]);
         assert_eq!(&out[..64], &base[..64]);
+    }
+
+    #[test]
+    fn 缩小后纯色保持不变() {
+        let base: Vec<u8> = [10u8, 120, 200, 255].repeat(256 * 256);
+        let out = downscale(&base, 256, 256, 20, 20);
+        assert_eq!(out.len(), 20 * 20 * 4);
+        assert!(out.chunks(4).all(|p| p == [10, 120, 200, 255]));
+    }
+
+    #[test]
+    fn 缩小时透明像素不把颜色拉黑() {
+        // 2×1：左边不透明红色，右边全透明黑色 → 1×1 应为半透明的红色，而不是暗红
+        let base = vec![255, 0, 0, 255, 0, 0, 0, 0];
+        assert_eq!(downscale(&base, 2, 1, 1, 1), vec![255, 0, 0, 128]);
     }
 
     #[test]
