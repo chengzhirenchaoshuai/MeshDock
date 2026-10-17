@@ -94,15 +94,20 @@ async function doDisconnect() {
 
 async function doConnect() {
   linkBusy.value = true;
+  connectError.value = null;
   try {
     snapshot.value = await connect();
     showToast("已连接组网");
   } catch (e) {
-    showToast(`连接失败：${(e as CliError).message}`);
+    // 弹窗显示原因和原始输出，方便排查
+    connectError.value = e as CliError;
   } finally {
     linkBusy.value = false;
   }
 }
+
+/** 连接失败的详情（弹窗） */
+const connectError = ref<CliError | null>(null);
 
 async function doRefresh() {
   if (busy.value) return;
@@ -380,6 +385,38 @@ onUnmounted(() => {
         </section>
       </template>
     </main>
+
+    <!-- 连接失败 -->
+    <div
+      v-if="connectError"
+      class="fixed inset-0 z-10 grid place-items-center bg-black/30 p-6"
+      @click.self="connectError = null"
+    >
+      <div class="flex max-h-full w-full max-w-lg flex-col gap-3 rounded-card border border-line bg-surface p-5 shadow-card">
+        <h2 class="flex items-center gap-2 text-base font-semibold">
+          <TriangleAlert class="size-5" style="color: var(--md-error)" />
+          连接失败
+        </h2>
+        <p class="text-sm">{{ connectError.message }}</p>
+        <details v-if="connectError.raw" class="min-h-0 text-sm">
+          <summary class="cursor-pointer text-muted select-none">查看原始输出</summary>
+          <pre class="num mt-2 max-h-72 overflow-auto rounded-ctl bg-subtle p-2 text-xs whitespace-pre-wrap select-text">{{ connectError.raw }}</pre>
+        </details>
+        <div class="flex justify-end gap-2">
+          <button class="rounded-ctl border border-line px-4 py-1.5 text-sm hover:bg-subtle" @click="connectError = null">
+            关闭
+          </button>
+          <button
+            class="inline-flex items-center gap-1.5 rounded-ctl bg-accent px-4 py-1.5 text-sm text-accent-fg hover:bg-accent-hover disabled:opacity-60"
+            :disabled="linkBusy"
+            @click="doConnect"
+          >
+            <LoaderCircle v-if="linkBusy" class="size-4 animate-spin" />
+            重试
+          </button>
+        </div>
+      </div>
+    </div>
 
     <DisconnectConfirm
       v-if="showDisconnect"

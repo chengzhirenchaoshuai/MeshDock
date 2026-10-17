@@ -278,11 +278,35 @@ fn login_error(raw: String) -> CliError {
     }
 }
 
-/// 连接组网。先裸执行 `tailscale up`；若因会改掉非默认设置（如控制端地址）被拒绝，
-/// 按它给出的完整命令重新执行，保证不改动任何现有设置
+/// 重试用的参数：去掉建议命令里已有的 --timeout（重复会报 "flag provided multiple times"），再统一追加
+fn retry_up_args(suggested: &[String]) -> Vec<String> {
+    let mut args: Vec<String> = suggested
+        .iter()
+        .filter(|a| !a.starts_with("--timeout"))
+        .cloned()
+        .collect();
+    args.push("--timeout=8s".into());
+    args
+}
+
+/// 连接组网。按官方说明，不带任何参数的 `tailscale up` 只让组网上线、不改设置；
+/// 一旦带了参数（哪怕只是 --timeout）就会被当成“完整设置”，触发非默认设置检查，所以第一步必须不带参数。
+/// 若仍被拒绝，按它给出的完整命令重新执行
 pub async fn up() -> Result<(), CliError> {
-    const WAIT: &str = "--timeout=8s";
-    let out = run(&["up", WAIT]).await?;
+    let out = match run(&["up"]).await {
+        Ok(out) => out,
+        // 不带参数时遇到需要登录会一直等待，只能靠 10 秒硬超时结束
+        Err(e) if e.kind == ErrorKind::Timeout => {
+            return Err(CliError {
+                kind: ErrorKind::Timeout,
+                message:
+                    "连接超过 10 秒没有完成，可能需要重新登录：请打开 Tailscale 官方客户端查看"
+                        .into(),
+                raw: e.raw,
+            });
+        }
+        Err(e) => return Err(e),
+    };
     if out.success {
         return Ok(());
     }
@@ -293,9 +317,9 @@ pub async fn up() -> Result<(), CliError> {
     let Some(args) = suggested_up_args(&text) else {
         return Err(CliError::new(ErrorKind::Failed, text));
     };
+    let args = retry_up_args(&args);
     let mut full: Vec<&str> = vec!["up"];
     full.extend(args.iter().map(String::as_str));
-    full.push(WAIT);
     let out = run(&full).await?;
     if out.success {
         Ok(())
@@ -348,6 +372,33 @@ non-default flags. To proceed, either re-run your command with --reset or\n\
 use the command below to explicitly mention the current value of\n\
 all non-default settings:\n\n\
 \ttailscale up --accept-dns=false --login-server=https://203.0.113.1:8443 --unattended\n";
+
+    /// 2026-10-17 实机输出（控制端地址已替换）：第一步带了 --timeout，建议命令里也原样带上了它
+    const UP_REFUSED_REAL: &str = "Error: changing settings via 'tailscale up' requires mentioning all\n\
+non-default flags. To proceed, either re-run your command with --reset or\n\
+use the command below to explicitly mention the current value of\n\
+all non-default settings:\n\n\
+\ttailscale up --timeout=8s --accept-dns=false --accept-routes=false --hostname=lan-desktop --login-server=https://203.0.113.1:8443 --unattended\n";
+
+    #[test]
+    fn 重试参数中只有一个_timeout() {
+        let args = retry_up_args(&suggested_up_args(UP_REFUSED_REAL).unwrap());
+        assert_eq!(
+            args.iter().filter(|a| a.starts_with("--timeout")).count(),
+            1
+        );
+        assert_eq!(
+            args,
+            [
+                "--accept-dns=false",
+                "--accept-routes=false",
+                "--hostname=lan-desktop",
+                "--login-server=https://203.0.113.1:8443",
+                "--unattended",
+                "--timeout=8s",
+            ]
+        );
+    }
 
     #[test]
     fn 取出_up_建议的完整参数() {
