@@ -42,6 +42,8 @@ pub struct PeerStatus {
     pub last_handshake: Option<String>,
     pub rx_bytes: Option<u64>,
     pub tx_bytes: Option<u64>,
+    /// 这台设备对外的各个地址（ip:端口），本机的用于识别局域网 IPv6 前缀
+    pub addrs: Option<Vec<String>>,
     /// 这台设备发布并已生效的子网路由，例如 phone-router 的 192.168.66.0/24
     pub primary_routes: Option<Vec<String>>,
 }

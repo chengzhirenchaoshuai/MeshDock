@@ -2,7 +2,7 @@
 use crate::model::{DerpMap, PeerStatus, Status, non_empty};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
 /// 自建中继的区域代码，界面上显示为“广州”
@@ -111,13 +111,52 @@ fn relay_conn(code: &str, regions: &Regions) -> Conn {
     )
 }
 
+/// 本机所在网络：本机各公网 IPv6 地址的 /64 前缀。
+/// 家里的设备往往都有同一前缀的公网 IPv6，Tailscale 会优先用它直连，这其实是局域网内直连
+#[derive(Default, Debug)]
+pub struct LocalNet {
+    v6_prefixes: Vec<[u16; 4]>,
+}
+
+impl LocalNet {
+    /// 从 status 中本机的 Addrs（本机对外的各个地址）提取前缀
+    pub fn from_status(status: &Status) -> Self {
+        let mut v6_prefixes: Vec<[u16; 4]> = status
+            .self_node
+            .iter()
+            .flat_map(|s| s.addrs.iter().flatten())
+            .filter_map(|a| match a.parse::<SocketAddr>().ok()?.ip() {
+                IpAddr::V6(v6) => Some(prefix64(&v6)),
+                IpAddr::V4(_) => None,
+            })
+            .collect();
+        v6_prefixes.sort_unstable();
+        v6_prefixes.dedup();
+        Self { v6_prefixes }
+    }
+
+    /// 链路本地（fe80::/10）、唯一本地（fc00::/7）或与本机同一 /64 前缀，都算局域网
+    fn is_lan_v6(&self, ip: &Ipv6Addr) -> bool {
+        let first = ip.segments()[0];
+        (first & 0xffc0) == 0xfe80
+            || (first & 0xfe00) == 0xfc00
+            || self.v6_prefixes.contains(&prefix64(ip))
+    }
+}
+
+fn prefix64(ip: &Ipv6Addr) -> [u16; 4] {
+    let s = ip.segments();
+    [s[0], s[1], s[2], s[3]]
+}
+
 /// 按直连地址判断：局域网 / IPv6 / 公网
-fn direct_conn(addr: &str) -> Conn {
+fn direct_conn(addr: &str, local: &LocalNet) -> Conn {
     let ip = addr
         .parse::<SocketAddr>()
         .map(|a| a.ip())
         .or_else(|_| addr.parse::<IpAddr>());
     let kind = match ip {
+        Ok(IpAddr::V6(v6)) if local.is_lan_v6(&v6) => ConnKind::Lan,
         Ok(IpAddr::V6(_)) => ConnKind::Ipv6,
         Ok(IpAddr::V4(v4)) if v4.is_private() => ConnKind::Lan,
         Ok(IpAddr::V4(_)) => ConnKind::Public,
@@ -133,14 +172,19 @@ fn direct_conn(addr: &str) -> Conn {
 }
 
 /// 判断对端设备的连接方式。`active_for` 是设备持续活跃的时长（由调用方记录），用于识别“正在打洞”
-pub fn classify(p: &PeerStatus, active_for: Option<Duration>, regions: &Regions) -> Conn {
+pub fn classify(
+    p: &PeerStatus,
+    active_for: Option<Duration>,
+    regions: &Regions,
+    local: &LocalNet,
+) -> Conn {
     // 1. 离线
     if p.online == Some(false) {
         return Conn::new(ConnKind::Offline, "离线", None);
     }
     // 2~4. 有直连地址
     if let Some(addr) = non_empty(&p.cur_addr) {
-        return direct_conn(addr);
+        return direct_conn(addr, local);
     }
     // 5. 经另一台节点中转
     if let Some(via) = non_empty(&p.peer_relay) {
@@ -197,7 +241,7 @@ pub struct PingResult {
 }
 
 /// 解析 ping 输出。走中继时命令退出码是 1 但仍有回包，所以只看文本，不看退出码
-pub fn parse_ping(output: &str, regions: &Regions) -> PingResult {
+pub fn parse_ping(output: &str, regions: &Regions, local: &LocalNet) -> PingResult {
     let raw = output.trim().to_string();
     let pong = raw.lines().find_map(|l| {
         let rest = l.trim().strip_prefix("pong from ")?;
@@ -211,7 +255,7 @@ pub fn parse_ping(output: &str, regions: &Regions) -> PingResult {
         } else if via.to_lowercase().contains("relay") {
             Conn::new(ConnKind::PeerRelay, format!("中继（{via}）"), None)
         } else if via.parse::<SocketAddr>().is_ok() {
-            direct_conn(&via)
+            direct_conn(&via, local)
         } else {
             Conn::new(ConnKind::Unknown, format!("路径：{via}"), None)
         };
@@ -273,26 +317,68 @@ mod tests {
         }
     }
 
+    fn status() -> Status {
+        serde_json::from_str(include_str!("../fixtures/status.json")).unwrap()
+    }
+
+    /// 本机网络取自真实样本：家里的 IPv6 前缀为 2001:db8:1::/64（脱敏后）
+    fn home() -> LocalNet {
+        LocalNet::from_status(&status())
+    }
+
     fn kind(p: &PeerStatus, active_for: Option<Duration>) -> ConnKind {
-        classify(p, active_for, &regions()).kind
+        classify(p, active_for, &regions(), &home()).kind
     }
 
     #[test]
-    fn 真实样本中的三台设备() {
-        let s: Status = serde_json::from_str(include_str!("../fixtures/status.json")).unwrap();
-        let r = regions();
+    fn 验收场景_同在家里时显示局域网直连() {
+        // 真实样本：ming-pc 与本机同在家里，Tailscale 用同前缀的公网 IPv6 直连
+        let s = status();
+        let (r, local) = (regions(), home());
         let got: Vec<_> = s
             .peers()
             .iter()
-            .map(|p| (p.host_name.clone().unwrap(), classify(p, None, &r).kind))
+            .map(|p| {
+                (
+                    p.host_name.clone().unwrap(),
+                    classify(p, None, &r, &local).kind,
+                )
+            })
             .collect();
         assert_eq!(
             got,
             [
-                ("ming-pc".into(), ConnKind::Ipv6),
+                ("ming-pc".into(), ConnKind::Lan),
                 ("phone-router".into(), ConnKind::Idle),
                 ("work-laptop".into(), ConnKind::Offline),
             ]
+        );
+    }
+
+    #[test]
+    fn 不同前缀的_ipv6_是_ipv6_直连() {
+        // 例如 ming-pc 连着手机热点
+        assert_eq!(
+            kind(&peer(true, true, "[2001:db8:2::5]:41641"), None),
+            ConnKind::Ipv6
+        );
+        // 没有本机信息时也按 IPv6 直连处理
+        let p = peer(true, true, "[2001:db8:1::13]:41641");
+        assert_eq!(
+            classify(&p, None, &regions(), &LocalNet::default()).kind,
+            ConnKind::Ipv6
+        );
+    }
+
+    #[test]
+    fn 链路本地和唯一本地_ipv6_算局域网() {
+        assert_eq!(
+            kind(&peer(true, true, "[fe80::1]:41641"), None),
+            ConnKind::Lan
+        );
+        assert_eq!(
+            kind(&peer(true, true, "[fd00::1]:41641"), None),
+            ConnKind::Lan
         );
     }
 
@@ -328,7 +414,7 @@ mod tests {
     fn 验收场景_先打洞后中继() {
         let p = peer(true, true, "");
         assert_eq!(kind(&p, Some(Duration::from_secs(3))), ConnKind::Punching);
-        let c = classify(&p, Some(Duration::from_secs(60)), &regions());
+        let c = classify(&p, Some(Duration::from_secs(60)), &regions(), &home());
         assert_eq!(c.kind, ConnKind::Relay);
         assert_eq!(c.label, "中继（经 广州）");
         assert!(c.hint.unwrap().contains("500 KB/s"));
@@ -353,7 +439,7 @@ mod tests {
     fn 官方中继显示区域名() {
         let mut p = peer(true, true, "");
         p.relay = Some("sin".into());
-        let c = classify(&p, None, &regions());
+        let c = classify(&p, None, &regions(), &home());
         assert_eq!(c.label, "中继（经 Singapore）");
     }
 
@@ -373,26 +459,26 @@ mod tests {
 
     #[test]
     fn 解析真实_ping_输出() {
-        let r = regions();
-        let direct = parse_ping(include_str!("../fixtures/ping-direct-ipv6.txt"), &r);
-        assert_eq!(direct.conn.unwrap().kind, ConnKind::Ipv6);
+        let (r, local) = (regions(), home());
+        let direct = parse_ping(include_str!("../fixtures/ping-direct-ipv6.txt"), &r, &local);
+        assert_eq!(direct.conn.unwrap().kind, ConnKind::Lan);
         assert_eq!(direct.latency_ms, Some(1.0));
 
-        let derp = parse_ping(include_str!("../fixtures/ping-derp.txt"), &r);
+        let derp = parse_ping(include_str!("../fixtures/ping-derp.txt"), &r, &local);
         assert_eq!(derp.conn.unwrap().label, "中继（经 广州）");
         assert_eq!(derp.latency_ms, Some(82.0));
 
-        let timeout = parse_ping(include_str!("../fixtures/ping-timeout.txt"), &r);
+        let timeout = parse_ping(include_str!("../fixtures/ping-timeout.txt"), &r, &local);
         assert!(timeout.conn.is_none());
         assert!(timeout.error.unwrap().contains("没有回应"));
 
-        let none = parse_ping("no matching peer", &r);
+        let none = parse_ping("no matching peer", &r, &local);
         assert_eq!(none.error.as_deref(), Some("组网中找不到这台设备"));
     }
 
     #[test]
     fn 识别控制端连不上() {
-        let mut s: Status = serde_json::from_str(include_str!("../fixtures/status.json")).unwrap();
+        let mut s = status();
         // 真实样本里只有“子网路由未开启”的告警，不算连不上
         assert!(!control_unreachable(&s));
         s.health = Some(vec![

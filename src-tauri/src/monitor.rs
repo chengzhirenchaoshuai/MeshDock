@@ -1,5 +1,5 @@
 //! 后台定时读取组网状态：整理成快照推给前端，并更新托盘
-use crate::classify::{self, Conn, Regions};
+use crate::classify::{self, Conn, LocalNet, Regions};
 use crate::cli::{self, CliError};
 use crate::model::{PeerStatus, Status, non_empty, time_ms};
 use crate::tray::{self, TrayState};
@@ -76,6 +76,8 @@ pub struct Monitor {
 struct Inner {
     latest: Mutex<Option<Snapshot>>,
     regions: Mutex<Option<Arc<Regions>>>,
+    /// 最近一次读到的本机网络信息，测速时判断局域网 IPv6 也要用
+    local: Mutex<Arc<LocalNet>>,
     /// 设备 id → 本轮连续活跃的起始时间；None 表示还没观察过
     active_since: Mutex<Option<HashMap<String, Instant>>>,
     wake: Notify,
@@ -87,6 +89,7 @@ impl Monitor {
             inner: Arc::new(Inner {
                 latest: Mutex::new(None),
                 regions: Mutex::new(None),
+                local: Mutex::new(Arc::default()),
                 active_since: Mutex::new(None),
                 wake: Notify::new(),
             }),
@@ -126,6 +129,10 @@ impl Monitor {
         if stale {
             self.wake();
         }
+    }
+
+    pub fn local(&self) -> Arc<LocalNet> {
+        self.inner.local.lock().unwrap().clone()
     }
 
     pub fn latest(&self) -> Option<Snapshot> {
@@ -178,6 +185,8 @@ impl Monitor {
         regions: &Regions,
         accept_routes: Option<bool>,
     ) -> Overview {
+        let local = Arc::new(LocalNet::from_status(status));
+        *self.inner.local.lock().unwrap() = local.clone();
         let subnet_routes = status
             .peers()
             .iter()
@@ -199,7 +208,7 @@ impl Monitor {
                     p.id.as_ref()
                         .and_then(|id| since.as_ref()?.get(id))
                         .map(Instant::elapsed);
-                device(p, classify::classify(p, active_for, regions))
+                device(p, classify::classify(p, active_for, regions, &local))
             })
             .collect();
         Overview {

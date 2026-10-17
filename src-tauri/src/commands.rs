@@ -26,7 +26,7 @@ pub async fn refresh(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snap
 #[tauri::command]
 pub async fn ping(ip: String, monitor: State<'_, Monitor>) -> Result<PingResult, CliError> {
     let regions = monitor.regions().await;
-    cli::ping(&ip, &regions).await
+    cli::ping(&ip, &regions, &monitor.local()).await
 }
 
 /// 本机网络体检，约 4 秒

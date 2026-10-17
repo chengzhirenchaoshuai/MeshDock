@@ -1,1 +1,1 @@
-pong from ming-pc (100.64.0.3) via [2001:db8::13]:41641 in 1ms
+pong from ming-pc (100.64.0.3) via [2001:db8:1::13]:41641 in 1ms

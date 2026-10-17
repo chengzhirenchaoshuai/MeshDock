@@ -1,5 +1,5 @@
 //! 调用官方 tailscale.exe：统一超时、隐藏黑框、把失败归类成带中文说明的错误
-use crate::classify::{PingResult, Regions, parse_ping};
+use crate::classify::{LocalNet, PingResult, Regions, parse_ping};
 use crate::model::{DerpMap, Netcheck, Prefs, Status, parse_netcheck};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -192,7 +192,7 @@ pub async fn netcheck() -> Result<Netcheck, CliError> {
 
 /// 测一次路径和延迟；离线设备 3 秒内返回。
 /// 只接受合法 IP，避免把以 `-` 开头的文本当成命令选项传给 tailscale
-pub async fn ping(ip: &str, regions: &Regions) -> Result<PingResult, CliError> {
+pub async fn ping(ip: &str, regions: &Regions, local: &LocalNet) -> Result<PingResult, CliError> {
     let ip: std::net::IpAddr = ip.parse().map_err(|_| CliError {
         kind: ErrorKind::Failed,
         message: "IP 地址格式不正确".into(),
@@ -200,7 +200,7 @@ pub async fn ping(ip: &str, regions: &Regions) -> Result<PingResult, CliError> {
     })?;
     let ip = ip.to_string();
     let out = run(&["ping", "-c", "1", "--timeout", "3s", &ip]).await?;
-    Ok(parse_ping(&out.text(), regions))
+    Ok(parse_ping(&out.text(), regions, local))
 }
 
 /// 在家 / 出门模式：accept-routes 开关
@@ -223,7 +223,9 @@ mod tests {
 
     #[tokio::test]
     async fn 拒绝非法_ip() {
-        let e = ping("--help", &Regions::default()).await.unwrap_err();
+        let e = ping("--help", &Regions::default(), &LocalNet::default())
+            .await
+            .unwrap_err();
         assert_eq!(e.message, "IP 地址格式不正确");
     }
 
@@ -253,7 +255,9 @@ mod tests {
     async fn 实机_体检和测速() {
         let n = netcheck().await.unwrap();
         assert!(n.udp.is_some());
-        let r = ping("100.64.0.255", &Regions::default()).await.unwrap();
+        let r = ping("100.64.0.255", &Regions::default(), &LocalNet::default())
+            .await
+            .unwrap();
         assert!(r.conn.is_none(), "{r:?}");
     }
 
