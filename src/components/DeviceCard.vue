@@ -95,7 +95,7 @@ const timeLine = computed(() => {
       <span
         class="min-w-0 flex-1 truncate"
         :class="pingLine.failed ? 'text-error' : 'text-muted'"
-        :title="pingLine.raw || undefined"
+        :title="pingLine.raw ? `${pingLine.text}\n\n${pingLine.raw}` : pingLine.text"
       >
         {{ testing ? "正在测试…" : pingLine.text }}
       </span>
