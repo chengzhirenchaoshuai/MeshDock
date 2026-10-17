@@ -4,7 +4,7 @@
 
 ### 新增
 
-- 免安装版：`MeshDock_<版本>_x64-portable.zip`，程序旁有 `data` 文件夹时进入便携模式，设置和 WebView 缓存都存在其中。
+- 免安装版：单个文件 `MeshDock_<版本>_x64-portable.exe`，数据默认放在用户文件夹（与安装版相同）；在 exe 旁手动新建 `data` 文件夹则进入便携模式，设置和 WebView 缓存都改存其中。
 - `pnpm package`：构建后把安装版和免安装版统一收集到项目根目录 `release\`（与 VenvDock 一致）。
 
 ## [0.1.0] - 2026-10-17

@@ -9,7 +9,8 @@
 两种版本任选其一：
 
 - **安装版** `MeshDock_<版本>_x64-setup.exe`：装到当前用户，不需要管理员权限。电脑上没有 WebView2 时，安装程序会自动下载安装。卸载在“设置 → 应用”里找 MeshDock。
-- **免安装版** `MeshDock_<版本>_x64-portable.zip`：解压后运行 `MeshDock.exe`。程序旁有 `data` 文件夹时为便携模式，设置和界面缓存都存在里面，删掉整个文件夹即可清除。需要电脑上已有 WebView2（Windows 10 一般自带）。
+- **免安装版** `MeshDock_<版本>_x64-portable.exe`：单个文件，直接运行。数据和安装版一样放在用户文件夹下（设置在 `%APPDATA%\com.meshdock.app`，界面缓存在 `%LOCALAPPDATA%\com.meshdock.app`）。需要电脑上已有 WebView2（Windows 10 一般自带）。
+  - 想让数据跟着程序走（例如放在 U 盘里），在 exe 旁新建一个 `data` 文件夹即可，设置和界面缓存都会改存到里面。
 
 前提：已安装 Tailscale 官方客户端（默认位置 `C:\Program Files\Tailscale\tailscale.exe`；装在别处时可用环境变量 `MESHDOCK_TAILSCALE` 指定）。
 
