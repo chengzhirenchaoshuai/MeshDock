@@ -1,14 +1,16 @@
-// M3 接入界面前，部分接口暂未使用
-#[allow(dead_code)]
 mod classify;
+// M4 起才用到 ping、netcheck、prefs 等接口
 #[allow(dead_code)]
 mod cli;
+mod commands;
 #[allow(dead_code)]
 mod model;
+mod monitor;
 mod tray;
 mod window;
 
-use tauri::{RunEvent, WindowEvent};
+use monitor::Monitor;
+use tauri::{Manager, RunEvent, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,10 +21,17 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            let monitor = Monitor::new();
+            app.manage(monitor.clone());
             tray::setup(app.handle())?;
+            monitor.start(app.handle().clone());
             window::show(app.handle());
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            commands::get_snapshot,
+            commands::refresh,
+        ])
         // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
         .on_window_event(|win, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {

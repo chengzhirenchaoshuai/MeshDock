@@ -1,7 +1,8 @@
 //! 托盘：图标右下角的圆点反映整体状态；左键单击打开主界面，右键弹出中文菜单
+use crate::monitor::Monitor;
 use crate::window;
 use tauri::{
-    AppHandle, Emitter, Wry,
+    AppHandle, Manager, Wry,
     image::Image,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -9,14 +10,10 @@ use tauri::{
 
 const TRAY_ID: &str = "main";
 
-/// 托盘菜单“刷新”发给前端的事件
-pub const REFRESH_EVENT: &str = "refresh-requested";
-
 /// 托盘底图：32×32 应用图标，状态圆点画在它上面
 const BASE_ICON: &[u8] = include_bytes!("../icons/32x32.png");
 
 /// 组网的整体状态，决定托盘圆点颜色和悬停提示
-#[allow(dead_code)] // M3 接入状态轮询后使用
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TrayState {
     /// 刚启动、还没拿到状态：不画圆点
@@ -58,9 +55,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => window::show(app),
-            "refresh" => {
-                let _ = app.emit(REFRESH_EVENT, ());
-            }
+            "refresh" => app.state::<Monitor>().wake(),
             "quit" => app.exit(0),
             _ => {}
         })
@@ -79,7 +74,6 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 }
 
 /// 更新托盘图标和悬停提示
-#[allow(dead_code)] // M3 接入状态轮询后使用
 pub fn set_state(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;

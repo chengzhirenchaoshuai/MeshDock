@@ -1,4 +1,5 @@
 //! 主窗口：按需创建；关闭后先隐藏，一段时间内未再打开则销毁窗口和 WebView 以释放内存
+use crate::monitor::Monitor;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -15,6 +16,8 @@ static HIDE_SEQ: AtomicU64 = AtomicU64::new(0);
 /// 显示并激活主窗口；窗口已被销毁时重新创建
 pub fn show(app: &AppHandle) {
     HIDE_SEQ.fetch_add(1, Ordering::SeqCst);
+    // 隐藏期间刷新较慢，重新显示时补一次
+    app.state::<Monitor>().wake_if_stale();
     if let Some(window) = app.get_webview_window(MAIN) {
         let _ = window.unminimize();
         let _ = window.show();
