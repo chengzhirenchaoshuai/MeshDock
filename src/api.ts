@@ -34,12 +34,20 @@ export interface Device {
   lastHandshakeMs: number | null;
 }
 
+export interface SubnetRoute {
+  device: string;
+  routes: string[];
+}
+
 export interface Overview {
   backendState: string | null;
   controlUnreachable: boolean;
   version: string | null;
   selfDevice: Device | null;
   peers: Device[];
+  /** 本机 accept-routes 实际值；读取失败为 null */
+  acceptRoutes: boolean | null;
+  subnetRoutes: SubnetRoute[];
 }
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
@@ -108,3 +116,18 @@ export interface NetcheckReport {
 }
 
 export const runNetcheck = () => invoke<NetcheckReport>("run_netcheck");
+
+export interface Settings {
+  /** 手动标记的“我在家”：true 在家，false 在外，null 没标记过 */
+  atHome: boolean | null;
+}
+
+export const getSettings = () => invoke<Settings>("get_settings");
+export const setAtHome = (atHome: boolean | null) => invoke<Settings>("set_at_home", { atHome });
+
+/** 切换在家（false）/ 出门（true）模式，返回切换后的快照 */
+export const setAcceptRoutes = (on: boolean) => invoke<Snapshot>("set_accept_routes", { on });
+
+/** 取走托盘发起的模式切换请求 */
+export const takeModeRequest = () => invoke<boolean | null>("take_mode_request");
+export const onModeRequest = (cb: () => void): Promise<UnlistenFn> => listen("mode-request", () => cb());

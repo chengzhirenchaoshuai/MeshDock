@@ -44,6 +44,18 @@ pub struct Overview {
     pub version: Option<String>,
     pub self_device: Option<Device>,
     pub peers: Vec<Device>,
+    /// 本机 accept-routes 的实际值（读取 debug prefs）；读取失败为 None
+    pub accept_routes: Option<bool>,
+    /// 组网里发布了子网路由的设备
+    pub subnet_routes: Vec<SubnetRoute>,
+}
+
+/// 某台设备发布的子网路由
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SubnetRoute {
+    pub device: String,
+    pub routes: Vec<String>,
 }
 
 /// 一次刷新的结果：成功时有 overview，失败时有 error
@@ -138,9 +150,12 @@ impl Monitor {
     /// 读取一次状态，保存快照、推给前端、更新托盘
     pub async fn refresh(&self, app: &AppHandle) -> Snapshot {
         let regions = self.regions().await;
-        let snapshot = match cli::status().await {
+        // 状态和设置同时读取；设置读不到不影响设备列表
+        let (status, prefs) = tokio::join!(cli::status(), cli::prefs());
+        let accept_routes = prefs.ok().and_then(|p| p.route_all);
+        let snapshot = match status {
             Ok(status) => Snapshot {
-                overview: Some(self.overview(&status, &regions)),
+                overview: Some(self.overview(&status, &regions, accept_routes)),
                 error: None,
                 updated_at_ms: now_ms(),
             },
@@ -151,12 +166,29 @@ impl Monitor {
             },
         };
         tray::set_state(app, tray_state(&snapshot));
+        tray::set_mode(app, accept_routes);
         *self.inner.latest.lock().unwrap() = Some(snapshot.clone());
         let _ = app.emit(SNAPSHOT_EVENT, &snapshot);
         snapshot
     }
 
-    fn overview(&self, status: &Status, regions: &Regions) -> Overview {
+    fn overview(
+        &self,
+        status: &Status,
+        regions: &Regions,
+        accept_routes: Option<bool>,
+    ) -> Overview {
+        let subnet_routes = status
+            .peers()
+            .iter()
+            .filter_map(|p| {
+                let routes = p.primary_routes.clone().filter(|r| !r.is_empty())?;
+                Some(SubnetRoute {
+                    device: non_empty(&p.host_name).unwrap_or("未知设备").to_string(),
+                    routes,
+                })
+            })
+            .collect();
         let peers = status.peers();
         self.track_active(&peers);
         let since = self.inner.active_since.lock().unwrap();
@@ -179,6 +211,8 @@ impl Monitor {
                 .as_ref()
                 .map(|p| device(p, classify::self_conn())),
             peers,
+            accept_routes,
+            subnet_routes,
         }
     }
 

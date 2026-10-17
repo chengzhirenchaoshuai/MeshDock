@@ -1,14 +1,36 @@
 //! 托盘：图标右下角的圆点反映整体状态；左键单击打开主界面，右键弹出中文菜单
 use crate::monitor::Monitor;
 use crate::window;
+use std::sync::Mutex;
 use tauri::{
-    AppHandle, Manager, Wry,
+    AppHandle, Emitter, Manager, Wry,
     image::Image,
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
 const TRAY_ID: &str = "main";
+
+/// 托盘菜单请求切换模式时发给前端的事件，前端收到后弹出确认框
+pub const MODE_REQUEST_EVENT: &str = "mode-request";
+
+/// 托盘里的两个模式菜单项，以及当前的实际值（点击会自动改变勾选，需要按实际值改回）
+struct ModeItems {
+    home: CheckMenuItem<Wry>,
+    away: CheckMenuItem<Wry>,
+    current: Mutex<Option<bool>>,
+}
+
+/// 托盘发起、等待前端确认的模式切换：Some(true) 表示请求切到出门模式。
+/// 窗口可能刚被创建、还没来得及监听事件，所以先存起来，由前端主动取走
+#[derive(Default)]
+pub struct PendingMode(Mutex<Option<bool>>);
+
+impl PendingMode {
+    pub fn take(&self) -> Option<bool> {
+        self.0.lock().unwrap().take()
+    }
+}
 
 /// 托盘底图：32×32 应用图标，状态圆点画在它上面
 const BASE_ICON: &[u8] = include_bytes!("../icons/32x32.png");
@@ -57,6 +79,8 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "show" => window::show(app),
             "refresh" => app.state::<Monitor>().wake(),
             "quit" => app.exit(0),
+            "mode-home" => request_mode(app, false),
+            "mode-away" => request_mode(app, true),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -87,6 +111,30 @@ pub fn set_state(app: &AppHandle, state: TrayState) {
     let _ = tray.set_tooltip(Some(tooltip_for(state)));
 }
 
+/// 按 accept-routes 的实际值勾选模式菜单项；读不到时两项都不勾
+pub fn set_mode(app: &AppHandle, accept_routes: Option<bool>) {
+    let Some(items) = app.try_state::<ModeItems>() else {
+        return;
+    };
+    *items.current.lock().unwrap() = accept_routes;
+    let _ = items.home.set_checked(accept_routes == Some(false));
+    let _ = items.away.set_checked(accept_routes == Some(true));
+}
+
+/// 托盘点了某个模式：先把勾选改回实际值，再打开主界面由用户确认
+fn request_mode(app: &AppHandle, accept_routes: bool) {
+    let current = app
+        .try_state::<ModeItems>()
+        .and_then(|items| *items.current.lock().unwrap());
+    set_mode(app, current);
+    if current == Some(accept_routes) {
+        return; // 已经是这个模式
+    }
+    *app.state::<PendingMode>().0.lock().unwrap() = Some(accept_routes);
+    window::show(app);
+    let _ = app.emit(MODE_REQUEST_EVENT, ());
+}
+
 fn tooltip_for(state: TrayState) -> String {
     format!("MeshDock · {}", state.label())
 }
@@ -108,23 +156,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         None::<&str>,
     )?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    // 在家 / 出门模式在 M6 接入，目前置灰
-    menu.append(&CheckMenuItem::with_id(
-        app,
-        "mode-home",
-        "在家模式",
-        false,
-        false,
-        None::<&str>,
-    )?)?;
-    menu.append(&CheckMenuItem::with_id(
-        app,
-        "mode-away",
-        "出门模式",
-        false,
-        false,
-        None::<&str>,
-    )?)?;
+    // 勾选状态由 set_mode 按实际设置更新
+    let home = CheckMenuItem::with_id(app, "mode-home", "在家模式", true, false, None::<&str>)?;
+    let away = CheckMenuItem::with_id(app, "mode-away", "出门模式", true, false, None::<&str>)?;
+    menu.append(&home)?;
+    menu.append(&away)?;
+    app.manage(ModeItems {
+        home,
+        away,
+        current: Mutex::new(None),
+    });
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?)?;
     Ok(menu)

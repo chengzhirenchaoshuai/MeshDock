@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { Check, Gauge, LoaderCircle, Network, RefreshCw } from "@lucide/vue";
+import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert } from "@lucide/vue";
 import {
+  getSettings,
   getSnapshot,
+  onModeRequest,
   onSnapshot,
   ping,
   refresh,
+  setAcceptRoutes,
+  setAtHome,
+  takeModeRequest,
   type CliError,
   type Device,
   type PingRecord,
+  type Settings,
   type Snapshot,
 } from "./api";
 import { backendLabel, clock } from "./format";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
+import ModeConfirm from "./components/ModeConfirm.vue";
+import ModePanel from "./components/ModePanel.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
 
 const tabs = [
@@ -84,26 +92,77 @@ const testingAll = computed(() => testing.value.size > 0);
 const testAll = () => Promise.all(testablePeers.value.map(testOne));
 
 let toastTimer: number | undefined;
+function showToast(text: string) {
+  toast.value = text;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (toast.value = null), 2500);
+}
+
 async function copyIp(ip: string) {
   try {
     await navigator.clipboard.writeText(ip);
-    toast.value = `已复制 ${ip}`;
+    showToast(`已复制 ${ip}`);
   } catch {
-    toast.value = "复制失败";
+    showToast("复制失败");
   }
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toast.value = null), 1800);
 }
 
-let unlisten: (() => void) | undefined;
+// ---------- 在家 / 出门模式 ----------
+const settings = ref<Settings | null>(null);
+const modeBusy = ref(false);
+/** 等待确认的目标模式：true 出门、false 在家、null 没有弹框 */
+const confirmOn = ref<boolean | null>(null);
+const modeError = ref<CliError | null>(null);
+
+function requestMode(on: boolean) {
+  modeError.value = null;
+  confirmOn.value = on;
+}
+
+/** 执行切换；fromDialog 为 false 时（一键改回）错误用提示条显示 */
+async function switchMode(on: boolean, fromDialog: boolean) {
+  modeBusy.value = true;
+  try {
+    snapshot.value = await setAcceptRoutes(on);
+    confirmOn.value = null;
+    showToast(`已切换到${on ? "出门模式" : "在家模式"}`);
+  } catch (e) {
+    if (fromDialog) modeError.value = e as CliError;
+    else showToast(`切换失败：${(e as CliError).message}`);
+  } finally {
+    modeBusy.value = false;
+  }
+}
+
+async function updateAtHome(atHome: true | null) {
+  try {
+    settings.value = await setAtHome(atHome);
+  } catch (e) {
+    showToast(String(e));
+  }
+}
+
+/** 托盘点了模式菜单：切到设备页并弹出确认框 */
+async function takeTrayRequest() {
+  const on = await takeModeRequest();
+  if (on === null) return;
+  tab.value = "devices";
+  requestMode(on);
+}
+
+const unlisteners: (() => void)[] = [];
 let clockTimer: number | undefined;
 onMounted(async () => {
-  unlisten = await onSnapshot((s) => (snapshot.value = s));
+  unlisteners.push(await onSnapshot((s) => (snapshot.value = s)));
+  unlisteners.push(await onModeRequest(takeTrayRequest));
   clockTimer = window.setInterval(() => (now.value = Date.now()), 5_000);
+  settings.value = await getSettings();
   snapshot.value = await getSnapshot();
+  // 窗口是被托盘的模式菜单唤起时，请求已经在等着了
+  await takeTrayRequest();
 });
 onUnmounted(() => {
-  unlisten?.();
+  unlisteners.forEach((f) => f());
   clearInterval(clockTimer);
 });
 </script>
@@ -183,6 +242,16 @@ onUnmounted(() => {
       <ErrorView v-else-if="snapshot.error" :error="snapshot.error" :busy="busy" @retry="doRefresh" />
 
       <template v-else-if="overview">
+        <ModePanel
+          class="mb-6"
+          :overview="overview"
+          :settings="settings"
+          :busy="modeBusy"
+          @request="requestMode"
+          @fix-home="switchMode(false, false)"
+          @set-at-home="updateAtHome"
+        />
+
         <!-- 本机 -->
         <section v-if="overview.selfDevice" class="mb-6">
           <h2 class="mb-2 text-xs font-medium text-muted">本机</h2>
@@ -218,7 +287,17 @@ onUnmounted(() => {
       </template>
     </main>
 
-    <!-- 复制提示 -->
+    <ModeConfirm
+      v-if="confirmOn !== null"
+      :on="confirmOn"
+      :at-home="settings?.atHome ?? null"
+      :busy="modeBusy"
+      :error="modeError"
+      @confirm="switchMode(confirmOn, true)"
+      @cancel="confirmOn = null"
+    />
+
+    <!-- 操作提示 -->
     <Transition
       enter-from-class="opacity-0 translate-y-2"
       leave-to-class="opacity-0 translate-y-2"
@@ -229,7 +308,8 @@ onUnmounted(() => {
         v-if="toast"
         class="fixed bottom-5 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-fg px-4 py-2 text-sm text-bg shadow-card"
       >
-        <Check class="size-4" />
+        <TriangleAlert v-if="toast.includes('失败')" class="size-4" />
+        <Check v-else class="size-4" />
         {{ toast }}
       </div>
     </Transition>

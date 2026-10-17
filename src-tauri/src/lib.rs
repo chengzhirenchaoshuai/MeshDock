@@ -1,17 +1,17 @@
 mod classify;
-// M6 起才用到 prefs、set 等接口
-#[allow(dead_code)]
 mod cli;
 mod commands;
-#[allow(dead_code)]
 mod model;
 mod monitor;
 mod netcheck;
+mod settings;
 mod tray;
 mod window;
 
 use monitor::Monitor;
+use settings::SettingsStore;
 use tauri::{Manager, RunEvent, WindowEvent};
+use tray::PendingMode;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +22,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            let config_dir = app.path().app_config_dir()?;
+            app.manage(SettingsStore::load(config_dir.join("settings.json")));
+            app.manage(PendingMode::default());
             let monitor = Monitor::new();
             app.manage(monitor.clone());
             tray::setup(app.handle())?;
@@ -34,6 +37,10 @@ pub fn run() {
             commands::refresh,
             commands::ping,
             commands::run_netcheck,
+            commands::get_settings,
+            commands::set_at_home,
+            commands::take_mode_request,
+            commands::set_accept_routes,
         ])
         // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
         .on_window_event(|win, event| {
