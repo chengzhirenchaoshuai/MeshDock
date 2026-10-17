@@ -1,3 +1,4 @@
+mod aumid;
 mod classify;
 mod cli;
 mod commands;
@@ -69,6 +70,12 @@ pub fn run() {
             app.manage(PendingMode::default());
             if let Err(e) = sync_autostart(app.handle(), settings.launch_on_boot) {
                 eprintln!("{e}");
+            }
+            // 免安装版登记通知的显示名和图标（图标放在设置文件旁）
+            if let Some(dir) = app.state::<AppPaths>().settings_file.parent()
+                && let Err(e) = aumid::register_if_portable(&app.config().identifier, dir)
+            {
+                eprintln!("登记通知身份失败：{e}");
             }
             let monitor = Monitor::new();
             app.manage(monitor.clone());

@@ -30,6 +30,7 @@
     "active": true,
     "targets": ["nsis"],
     "shortDescription": "自建 Headscale 组网的中文图形客户端",
+    "publisher": "MeshDock",
     "category": "Utility",
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
