@@ -12,19 +12,19 @@ import {
   onSnapshot,
   openRustdesk,
   openSsh,
-  ping,
   refresh,
   saveSettings,
   setAcceptRoutes,
   takeModeRequest,
   type CliError,
   type History,
-  type Device,
-  type PingRecord,
   type Settings,
   type Snapshot,
 } from "./api";
 import { backendLabel, clock } from "./format";
+import { usePing } from "./composables/usePing";
+import { useToast } from "./composables/useToast";
+import ConnectErrorDialog from "./components/ConnectErrorDialog.vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
 import DisconnectConfirm from "./components/DisconnectConfirm.vue";
@@ -45,17 +45,17 @@ const snapshot = ref<Snapshot | null>(null);
 const busy = ref(false);
 /** 当前时间，每 5 秒更新：用于“X 分钟前”和测试结果的 30 秒覆盖 */
 const now = ref(Date.now());
-const toast = ref<string | null>(null);
-/** 设备 id → 最近一次测试结果（只存在内存里） */
-const pings = ref<Record<string, PingRecord>>({});
 /** 设备 id → 最近 24 小时的延迟测量 */
 const history = ref<History>({});
-/** 正在测试的设备 id */
-const testing = ref<Set<string>>(new Set());
+const { toast, showOk, showError } = useToast();
 
 const overview = computed(() => snapshot.value?.overview ?? null);
 const peers = computed(() => overview.value?.peers ?? []);
 const onlineCount = computed(() => peers.value.filter((p) => p.conn.kind !== "offline").length);
+const { pings, testing, testOne, testablePeers, testingAll, testAll } = usePing(
+  peers,
+  () => (now.value = Date.now()),
+);
 
 /** 顶部的整体状态：文字 + 状态色 */
 const overall = computed(() => {
@@ -84,7 +84,7 @@ async function doDisconnect() {
   try {
     snapshot.value = await disconnect();
     showDisconnect.value = false;
-    showToast("已断开组网");
+    showOk("已断开组网");
   } catch (e) {
     disconnectError.value = e as CliError;
   } finally {
@@ -97,7 +97,7 @@ async function doConnect() {
   connectError.value = null;
   try {
     snapshot.value = await connect();
-    showToast("已连接组网");
+    showOk("已连接组网");
   } catch (e) {
     // 弹窗显示原因和原始输出，方便排查
     connectError.value = e as CliError;
@@ -119,44 +119,12 @@ async function doRefresh() {
   }
 }
 
-/** 设备的组网 IPv4，测试用 */
-const deviceIp = (d: Device) => d.ips.find((a) => !a.includes(":")) ?? d.ips[0];
-
-async function testOne(d: Device) {
-  const ip = deviceIp(d);
-  if (!ip || testing.value.has(d.id)) return;
-  testing.value = new Set(testing.value).add(d.id);
-  let record: PingRecord;
-  try {
-    record = { result: await ping(ip), error: null, atMs: Date.now() };
-  } catch (e) {
-    record = { result: null, error: e as CliError, atMs: Date.now() };
-  }
-  pings.value = { ...pings.value, [d.id]: record };
-  now.value = Date.now();
-  const next = new Set(testing.value);
-  next.delete(d.id);
-  testing.value = next;
-}
-
-/** 并发测试所有在线设备，离线的跳过 */
-const testablePeers = computed(() => peers.value.filter((p) => p.conn.kind !== "offline"));
-const testingAll = computed(() => testing.value.size > 0);
-const testAll = () => Promise.all(testablePeers.value.map(testOne));
-
-let toastTimer: number | undefined;
-function showToast(text: string) {
-  toast.value = text;
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => (toast.value = null), 2500);
-}
-
 async function copyIp(ip: string) {
   try {
     await navigator.clipboard.writeText(ip);
-    showToast(`已复制 ${ip}`);
+    showOk(`已复制 ${ip}`);
   } catch {
-    showToast("复制失败");
+    showError("复制失败");
   }
 }
 
@@ -178,10 +146,10 @@ async function switchMode(on: boolean, fromDialog: boolean) {
   try {
     snapshot.value = await setAcceptRoutes(on);
     confirmOn.value = null;
-    showToast(`已切换到${on ? "出门模式" : "在家模式"}`);
+    showOk(`已切换到${on ? "出门模式" : "在家模式"}`);
   } catch (e) {
     if (fromDialog) modeError.value = e as CliError;
-    else showToast(`切换失败：${(e as CliError).message}`);
+    else showError(`切换失败：${(e as CliError).message}`);
   } finally {
     modeBusy.value = false;
   }
@@ -192,7 +160,7 @@ async function launch(open: (arg: string) => Promise<void>, arg: string) {
   try {
     await open(arg);
   } catch (e) {
-    showToast(`打开失败：${String(e)}`);
+    showError(`打开失败：${String(e)}`);
   }
 }
 
@@ -205,7 +173,7 @@ async function updateSettings(next: Settings) {
   try {
     settings.value = await saveSettings(next);
   } catch (e) {
-    showToast(`保存失败：${String(e)}`);
+    showError(`保存失败：${String(e)}`);
   }
 }
 
@@ -386,37 +354,13 @@ onUnmounted(() => {
       </template>
     </main>
 
-    <!-- 连接失败 -->
-    <div
+    <ConnectErrorDialog
       v-if="connectError"
-      class="fixed inset-0 z-10 grid place-items-center bg-black/30 p-6"
-      @click.self="connectError = null"
-    >
-      <div class="flex max-h-full w-full max-w-lg flex-col gap-3 rounded-card border border-line bg-surface p-5 shadow-card">
-        <h2 class="flex items-center gap-2 text-base font-semibold">
-          <TriangleAlert class="size-5" style="color: var(--md-error)" />
-          连接失败
-        </h2>
-        <p class="text-sm">{{ connectError.message }}</p>
-        <details v-if="connectError.raw" class="min-h-0 text-sm">
-          <summary class="cursor-pointer text-muted select-none">查看原始输出</summary>
-          <pre class="num mt-2 max-h-72 overflow-auto rounded-ctl bg-subtle p-2 text-xs whitespace-pre-wrap select-text">{{ connectError.raw }}</pre>
-        </details>
-        <div class="flex justify-end gap-2">
-          <button class="rounded-ctl border border-line px-4 py-1.5 text-sm hover:bg-subtle" @click="connectError = null">
-            关闭
-          </button>
-          <button
-            class="inline-flex items-center gap-1.5 rounded-ctl bg-accent px-4 py-1.5 text-sm text-accent-fg hover:bg-accent-hover disabled:opacity-60"
-            :disabled="linkBusy"
-            @click="doConnect"
-          >
-            <LoaderCircle v-if="linkBusy" class="size-4 animate-spin" />
-            重试
-          </button>
-        </div>
-      </div>
-    </div>
+      :error="connectError"
+      :busy="linkBusy"
+      @retry="doConnect"
+      @close="connectError = null"
+    />
 
     <DisconnectConfirm
       v-if="showDisconnect"
@@ -447,9 +391,9 @@ onUnmounted(() => {
         v-if="toast"
         class="fixed bottom-5 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-fg px-4 py-2 text-sm text-bg shadow-card"
       >
-        <TriangleAlert v-if="toast.includes('失败')" class="size-4" />
+        <TriangleAlert v-if="toast.kind === 'error'" class="size-4" />
         <Check v-else class="size-4" />
-        {{ toast }}
+        {{ toast.text }}
       </div>
     </Transition>
   </div>
