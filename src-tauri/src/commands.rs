@@ -1,4 +1,5 @@
 //! 暴露给前端的命令
+use crate::applog;
 use crate::classify::PingResult;
 use crate::cli::{self, CliError, ErrorKind};
 use crate::history::{History, HistoryStore, Sample};
@@ -80,10 +81,16 @@ pub async fn set_accept_routes(
     app: AppHandle,
     monitor: State<'_, Monitor>,
 ) -> Result<Snapshot, CliError> {
-    cli::set_accept_routes(on).await?;
+    let mode = if on { "出门模式" } else { "在家模式" };
+    if let Err(e) = cli::set_accept_routes(on).await {
+        applog::error(format!("切换到{mode}失败：{}\n{}", e.message, e.raw));
+        return Err(e);
+    }
+    applog::info(format!("已执行切换到{mode}"));
     let snapshot = monitor.refresh(&app).await;
     let actual = snapshot.overview.as_ref().and_then(|o| o.accept_routes);
     if actual != Some(on) {
+        applog::error(format!("切换到{mode}后读取到 accept-routes={actual:?}"));
         return Err(CliError {
             kind: ErrorKind::Failed,
             message: "已执行切换，但重新读取到的设置没有变化，请稍后刷新再看".into(),
@@ -103,9 +110,11 @@ pub fn save_settings(
     let old = store.get();
     if settings.launch_on_boot != old.launch_on_boot {
         // 先改注册表，失败就不保存这一项
-        crate::sync_autostart(&app, settings.launch_on_boot)?;
+        crate::sync_autostart(&app, settings.launch_on_boot).inspect_err(|e| applog::error(e))?;
     }
-    let saved = store.update(|s| *s = settings)?;
+    let saved = store
+        .update(|s| *s = settings)
+        .inspect_err(|e| applog::error(e))?;
     // 家里网关或手动标记变了，立即重新识别位置
     if saved.home_gateway != old.home_gateway || saved.at_home != old.at_home {
         app.state::<Monitor>().wake();
@@ -156,6 +165,9 @@ pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("打开 RustDesk 失败：{e}"))
 }
 
+/// 诊断报告附带的日志行数
+const REPORT_LOG_LINES: usize = 50;
+
 /// 生成诊断报告（已打码）：先刷新状态，再读取 status、prefs、netcheck 的原始输出
 #[tauri::command]
 pub async fn build_report(app: AppHandle, monitor: State<'_, Monitor>) -> Result<String, String> {
@@ -190,6 +202,7 @@ pub async fn build_report(app: AppHandle, monitor: State<'_, Monitor>) -> Result
             .as_ref()
             .map_or_else(failed, |o| report::strip_prefs(&o.stdout)),
         raw_netcheck: nc.as_ref().map_or_else(failed, |o| o.text()),
+        recent_log: applog::tail(REPORT_LOG_LINES),
     };
     Ok(report::compose(&input))
 }
@@ -207,7 +220,10 @@ pub fn save_report(text: String, app: AppHandle) -> Result<String, String> {
         chrono::Local::now().format("%Y%m%d-%H%M%S")
     );
     let path = dir.join(name);
-    std::fs::write(&path, text).map_err(|e| format!("保存失败：{e}"))?;
+    std::fs::write(&path, text).map_err(|e| {
+        applog::error(format!("保存诊断报告失败：{e}"));
+        format!("保存失败：{e}")
+    })?;
     let _ = app.opener().reveal_item_in_dir(&path);
     Ok(path.display().to_string())
 }
@@ -215,13 +231,19 @@ pub fn save_report(text: String, app: AppHandle) -> Result<String, String> {
 /// 连接组网（tailscale up，不改动现有设置），返回刷新后的快照
 #[tauri::command]
 pub async fn connect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snapshot, CliError> {
-    cli::up().await?;
+    cli::up()
+        .await
+        .inspect_err(|e| applog::error(format!("连接组网失败：{}\n{}", e.message, e.raw)))?;
+    applog::info("已连接组网");
     Ok(monitor.refresh(&app).await)
 }
 
 /// 断开组网（tailscale down），返回刷新后的快照。前端已做二次确认
 #[tauri::command]
 pub async fn disconnect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snapshot, CliError> {
-    cli::down().await?;
+    cli::down()
+        .await
+        .inspect_err(|e| applog::error(format!("断开组网失败：{}\n{}", e.message, e.raw)))?;
+    applog::info("已断开组网");
     Ok(monitor.refresh(&app).await)
 }

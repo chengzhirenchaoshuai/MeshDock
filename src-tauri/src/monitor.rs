@@ -398,7 +398,7 @@ impl Monitor {
         }
         for (title, body) in messages {
             if let Err(e) = app.notification().builder().title(title).body(body).show() {
-                eprintln!("发送通知失败：{e}");
+                crate::applog::error(format!("发送通知失败：{e}"));
             }
         }
     }

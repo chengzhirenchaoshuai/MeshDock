@@ -106,7 +106,7 @@ pub fn set_state(app: &AppHandle, state: TrayState) {
         Ok(icon) => {
             let _ = tray.set_icon(Some(icon));
         }
-        Err(e) => eprintln!("生成托盘图标失败：{e}"),
+        Err(e) => crate::applog::error(format!("生成托盘图标失败：{e}")),
     }
     let _ = tray.set_tooltip(Some(tooltip_for(state)));
 }

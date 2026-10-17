@@ -79,6 +79,8 @@ pub struct Input<'a> {
     pub raw_status: String,
     pub raw_prefs: String,
     pub raw_netcheck: String,
+    /// 最近的 MeshDock 日志
+    pub recent_log: String,
 }
 
 fn level_text(level: netcheck::Level) -> &'static str {
@@ -236,6 +238,12 @@ pub fn compose(input: &Input) -> String {
         line(format!("## 原始输出：{title}"));
         line(raw.trim_end().to_string());
     }
+    line(String::new());
+    line("## MeshDock 最近日志".into());
+    line(match input.recent_log.trim_end() {
+        "" => "无".into(),
+        log => log.to_string(),
+    });
     mask(&t)
 }
 
@@ -344,10 +352,16 @@ mod tests {
             raw_status: include_str!("../fixtures/status.json").into(),
             raw_prefs: strip_prefs(include_str!("../fixtures/prefs.json")),
             raw_netcheck: include_str!("../fixtures/netcheck.txt").into(),
+            recent_log: "2026-10-17 16:29:00 [错误] 连接组网失败：dial 203.0.113.77:443".into(),
         };
         let out = compose(&input);
         assert!(out.contains("读取组网状态失败：服务没运行"));
         assert!(out.contains("## 原始输出：tailscale netcheck --format=json"));
+        assert!(out.contains("## MeshDock 最近日志"));
+        assert!(
+            out.contains("连接组网失败：dial 203.*.*.*:443"),
+            "日志应附上并打码"
+        );
         assert!(
             !out.contains("203.0.113.10") && !out.contains("2001:db8:1::"),
             "未打码"
@@ -376,6 +390,7 @@ mod tests {
             raw_status: status.stdout,
             raw_prefs: String::new(),
             raw_netcheck: nc.text(),
+            recent_log: String::new(),
         };
         let out = compose(&input);
         for addr in [n.global_v4, n.global_v6].into_iter().flatten() {

@@ -6,6 +6,8 @@ pub struct AppPaths {
     pub settings_file: PathBuf,
     /// 24 小时延迟历史
     pub history_file: PathBuf,
+    /// 日志文件 meshdock.log
+    pub log_file: PathBuf,
     /// WebView2 数据目录；None 表示使用默认位置（%LOCALAPPDATA%\com.meshdock.app）
     pub webview_dir: Option<PathBuf>,
 }
@@ -21,12 +23,15 @@ impl AppPaths {
             return Ok(Self {
                 settings_file: dir.join("settings.json"),
                 history_file: dir.join("history.json"),
+                log_file: dir.join("meshdock.log"),
                 webview_dir: Some(dir.join("webview")),
             });
         }
         Ok(Self {
             settings_file: app.path().app_config_dir()?.join("settings.json"),
             history_file: app.path().app_data_dir()?.join("history.json"),
+            // %LOCALAPPDATA%\com.meshdock.app\logs
+            log_file: app.path().app_log_dir()?.join("meshdock.log"),
             webview_dir: None,
         })
     }

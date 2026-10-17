@@ -72,7 +72,7 @@ impl HistoryStore {
                 let _ = std::fs::create_dir_all(dir);
             }
             if let Err(e) = std::fs::write(&self.path, text) {
-                eprintln!("保存延迟历史失败：{e}");
+                crate::applog::error(format!("保存延迟历史失败：{e}"));
             }
         }
     }

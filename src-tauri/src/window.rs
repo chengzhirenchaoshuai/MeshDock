@@ -27,7 +27,7 @@ pub fn show(app: &AppHandle) {
         return;
     }
     if let Err(e) = create(app) {
-        eprintln!("创建主窗口失败：{e}");
+        crate::applog::error(format!("创建主窗口失败：{e}"));
     }
 }
 
