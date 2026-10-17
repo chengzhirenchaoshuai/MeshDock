@@ -62,9 +62,13 @@ impl Regions {
     pub fn from_derp_map(map: &DerpMap) -> Self {
         let mut regions = Self::default();
         for (key, r) in map.regions.iter().flatten() {
-            let name = if r.region_code.as_deref() == Some(SELF_HOSTED_REGION) {
+            let code = r.region_code.as_deref();
+            let name = if code == Some(SELF_HOSTED_REGION) {
                 SELF_HOSTED_NAME.into()
+            } else if let Some(zh) = code.and_then(zh_region_name) {
+                zh.into()
             } else {
+                // 表里没有的新区域保留官方英文名
                 r.region_name.clone().unwrap_or_else(|| key.clone())
             };
             if let Some(code) = &r.region_code {
@@ -92,6 +96,41 @@ impl Regions {
             .cloned()
             .unwrap_or_else(|| format!("区域 {id}"))
     }
+}
+
+/// 官方中继区域代码 → 中文城市名（取自 tailscale 1.102.4 的 derp-map，共 28 个）
+fn zh_region_name(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "nyc" => "纽约",
+        "sfo" => "旧金山",
+        "sin" => "新加坡",
+        "fra" => "法兰克福",
+        "syd" => "悉尼",
+        "blr" => "班加罗尔",
+        "tok" => "东京",
+        "lhr" => "伦敦",
+        "dfw" => "达拉斯",
+        "sea" => "西雅图",
+        "sao" => "圣保罗",
+        "ord" => "芝加哥",
+        "den" => "丹佛",
+        "ams" => "阿姆斯特丹",
+        "jnb" => "约翰内斯堡",
+        "mia" => "迈阿密",
+        "lax" => "洛杉矶",
+        "par" => "巴黎",
+        "mad" => "马德里",
+        "hkg" => "香港",
+        "tor" => "多伦多",
+        "waw" => "华沙",
+        "dbi" => "迪拜",
+        "hnl" => "檀香山",
+        "nai" => "内罗毕",
+        "nue" => "纽伦堡",
+        "iad" => "阿什本",
+        "hel" => "赫尔辛基",
+        _ => return None,
+    })
 }
 
 /// 中继的提示：自建中继受服务器带宽限制
@@ -478,7 +517,7 @@ mod tests {
         let mut p = peer(true, true, "");
         p.relay = Some("sin".into());
         let c = classify(&p, None, &regions(), &home());
-        assert_eq!(c.label, "中继（经 Singapore）");
+        assert_eq!(c.label, "中继（经 新加坡）");
     }
 
     #[test]
@@ -488,10 +527,32 @@ mod tests {
     }
 
     #[test]
+    fn 全部区域都有中文名() {
+        let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
+        let r = Regions::from_derp_map(&map);
+        for id in map.regions.as_ref().unwrap().keys() {
+            let name = r.name_by_id(id);
+            assert!(!name.is_ascii(), "区域 {id} 没有中文名：{name}");
+        }
+        // 表里没有的新区域保留英文名
+        let extra = DerpMap {
+            regions: Some(HashMap::from([(
+                "30".to_string(),
+                crate::model::DerpRegion {
+                    region_id: Some(30),
+                    region_code: Some("xyz".into()),
+                    region_name: Some("Newtown".into()),
+                },
+            )])),
+        };
+        assert_eq!(Regions::from_derp_map(&extra).name("xyz"), "Newtown");
+    }
+
+    #[test]
     fn 区域编号取名() {
         let r = regions();
         assert_eq!(r.name_by_id("999"), "广州");
-        assert_eq!(r.name_by_id("1"), "New York City");
+        assert_eq!(r.name_by_id("1"), "纽约");
         assert_eq!(r.name_by_id("12345"), "区域 12345");
     }
 
