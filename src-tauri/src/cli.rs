@@ -214,6 +214,108 @@ pub async fn ping(ip: &str, regions: &Regions, local: &LocalNet) -> Result<PingR
     Ok(parse_ping(&out.text(), regions, local))
 }
 
+/// `tailscale up` 因为会改掉非默认设置而拒绝执行时，从提示中取出它给出的完整命令的参数。
+/// 提示格式（tailscale.exe 1.102.4 原文）：
+/// "Error: changing settings via 'tailscale up' requires mentioning all\nnon-default flags. ...\n\n\ttailscale up --flag=... ..."
+/// 只接受全部以 `--` 开头的参数，避免执行意外内容
+pub fn suggested_up_args(text: &str) -> Option<Vec<String>> {
+    if !text.contains("requires mentioning all") {
+        return None;
+    }
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("tailscale up"))?;
+    let args = split_args(line.strip_prefix("tailscale up")?)?;
+    args.iter().all(|a| a.starts_with("--")).then_some(args)
+}
+
+/// 按空白拆分参数，支持单引号和双引号包住的值；引号不成对时返回 None
+fn split_args(text: &str) -> Option<Vec<String>> {
+    let mut args = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    let mut has_token = false;
+    for c in text.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => cur.push(c),
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                has_token = true;
+            }
+            None if c.is_whitespace() => {
+                if has_token {
+                    args.push(std::mem::take(&mut cur));
+                    has_token = false;
+                }
+            }
+            None => {
+                cur.push(c);
+                has_token = true;
+            }
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if has_token {
+        args.push(cur);
+    }
+    Some(args)
+}
+
+/// 需要重新登录时的提示（tailscale.exe 1.102.4 原文为 "To authenticate, visit:"）
+fn needs_login(text: &str) -> bool {
+    text.contains("To authenticate, visit")
+}
+
+fn login_error(raw: String) -> CliError {
+    CliError {
+        kind: ErrorKind::Failed,
+        message: "需要重新登录：请打开 Tailscale 官方客户端完成登录".into(),
+        raw,
+    }
+}
+
+/// 连接组网。先裸执行 `tailscale up`；若因会改掉非默认设置（如控制端地址）被拒绝，
+/// 按它给出的完整命令重新执行，保证不改动任何现有设置
+pub async fn up() -> Result<(), CliError> {
+    const WAIT: &str = "--timeout=8s";
+    let out = run(&["up", WAIT]).await?;
+    if out.success {
+        return Ok(());
+    }
+    let text = out.text();
+    if needs_login(&text) {
+        return Err(login_error(text));
+    }
+    let Some(args) = suggested_up_args(&text) else {
+        return Err(CliError::new(ErrorKind::Failed, text));
+    };
+    let mut full: Vec<&str> = vec!["up"];
+    full.extend(args.iter().map(String::as_str));
+    full.push(WAIT);
+    let out = run(&full).await?;
+    if out.success {
+        Ok(())
+    } else if needs_login(&out.text()) {
+        Err(login_error(out.text()))
+    } else {
+        Err(CliError::new(ErrorKind::Failed, out.text()))
+    }
+}
+
+/// 断开组网；本来就已断开也算成功
+pub async fn down() -> Result<(), CliError> {
+    let out = run(&["down"]).await?;
+    if out.success || out.text().contains("already stopped") {
+        Ok(())
+    } else {
+        Err(CliError::new(ErrorKind::Failed, out.text()))
+    }
+}
+
 /// 在家 / 出门模式：accept-routes 开关
 pub async fn set_accept_routes(on: bool) -> Result<(), CliError> {
     let flag = format!("--accept-routes={on}");
@@ -238,6 +340,46 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.message, "IP 地址格式不正确");
+    }
+
+    /// 按 tailscale.exe 1.102.4 中的提示原文构造
+    const UP_REFUSED: &str = "Error: changing settings via 'tailscale up' requires mentioning all\n\
+non-default flags. To proceed, either re-run your command with --reset or\n\
+use the command below to explicitly mention the current value of\n\
+all non-default settings:\n\n\
+\ttailscale up --accept-dns=false --login-server=https://203.0.113.1:8443 --unattended\n";
+
+    #[test]
+    fn 取出_up_建议的完整参数() {
+        assert_eq!(
+            suggested_up_args(UP_REFUSED).unwrap(),
+            [
+                "--accept-dns=false",
+                "--login-server=https://203.0.113.1:8443",
+                "--unattended"
+            ]
+        );
+        assert_eq!(suggested_up_args("Success."), None);
+    }
+
+    #[test]
+    fn 建议命令中的引号与可疑参数() {
+        let quoted = UP_REFUSED.replace("--unattended", "--hostname='my pc'");
+        assert_eq!(suggested_up_args(&quoted).unwrap()[2], "--hostname=my pc");
+        // 混入不以 -- 开头的内容时拒绝执行
+        let bad = UP_REFUSED.replace("--unattended", "--unattended ; calc");
+        assert_eq!(suggested_up_args(&bad), None);
+        // 引号不成对
+        let broken = UP_REFUSED.replace("--unattended", "--hostname='x");
+        assert_eq!(suggested_up_args(&broken), None);
+    }
+
+    #[test]
+    fn 识别需要重新登录() {
+        assert!(needs_login(
+            "\nTo authenticate, visit:\n\n\thttps://203.0.113.1:8443/register/abc\n"
+        ));
+        assert!(!needs_login(UP_REFUSED));
     }
 
     #[test]

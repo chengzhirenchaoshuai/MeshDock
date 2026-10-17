@@ -211,3 +211,17 @@ pub fn save_report(text: String, app: AppHandle) -> Result<String, String> {
     let _ = app.opener().reveal_item_in_dir(&path);
     Ok(path.display().to_string())
 }
+
+/// 连接组网（tailscale up，不改动现有设置），返回刷新后的快照
+#[tauri::command]
+pub async fn connect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snapshot, CliError> {
+    cli::up().await?;
+    Ok(monitor.refresh(&app).await)
+}
+
+/// 断开组网（tailscale down），返回刷新后的快照。前端已做二次确认
+#[tauri::command]
+pub async fn disconnect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snapshot, CliError> {
+    cli::down().await?;
+    Ok(monitor.refresh(&app).await)
+}

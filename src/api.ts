@@ -208,3 +208,8 @@ export interface RouterHealth {
   deviceModel: string | null;
   lastSeenMs: number | null;
 }
+
+/** 连接组网（tailscale up，不改动现有设置） */
+export const connect = () => invoke<Snapshot>("connect");
+/** 断开组网（tailscale down），调用前需二次确认 */
+export const disconnect = () => invoke<Snapshot>("disconnect");

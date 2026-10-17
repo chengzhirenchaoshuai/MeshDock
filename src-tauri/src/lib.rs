@@ -87,6 +87,8 @@ pub fn run() {
             commands::get_history,
             commands::build_report,
             commands::save_report,
+            commands::connect,
+            commands::disconnect,
             commands::run_netcheck,
             commands::get_settings,
             commands::take_mode_request,

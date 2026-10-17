@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert } from "@lucide/vue";
 import {
+  connect,
+  disconnect,
   getHistory,
   getSettings,
   getSnapshot,
@@ -25,6 +27,7 @@ import {
 import { backendLabel, clock } from "./format";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
+import DisconnectConfirm from "./components/DisconnectConfirm.vue";
 import ModeConfirm from "./components/ModeConfirm.vue";
 import ModePanel from "./components/ModePanel.vue";
 import RouterPanel from "./components/RouterPanel.vue";
@@ -65,6 +68,41 @@ const overall = computed(() => {
 
 /** 1.102.4-t1a2b3c-g4d5e6f → 1.102.4 */
 const shortVersion = (v: string | null) => (v ? v.split("-")[0] : "版本未知");
+
+// ---------- 连接 / 断开组网 ----------
+const linkBusy = ref(false);
+const showDisconnect = ref(false);
+const disconnectError = ref<CliError | null>(null);
+
+function openDisconnect() {
+  disconnectError.value = null;
+  showDisconnect.value = true;
+}
+
+async function doDisconnect() {
+  linkBusy.value = true;
+  try {
+    snapshot.value = await disconnect();
+    showDisconnect.value = false;
+    showToast("已断开组网");
+  } catch (e) {
+    disconnectError.value = e as CliError;
+  } finally {
+    linkBusy.value = false;
+  }
+}
+
+async function doConnect() {
+  linkBusy.value = true;
+  try {
+    snapshot.value = await connect();
+    showToast("已连接组网");
+  } catch (e) {
+    showToast(`连接失败：${(e as CliError).message}`);
+  } finally {
+    linkBusy.value = false;
+  }
+}
 
 async function doRefresh() {
   if (busy.value) return;
@@ -213,6 +251,26 @@ onUnmounted(() => {
       <span v-if="overview" class="text-xs text-muted">
         {{ peers.length }} 台设备 · {{ onlineCount }} 台在线
       </span>
+      <!-- 连接 / 断开组网：断开需二次确认，连接直接执行 -->
+      <button
+        v-if="overview && overview.backendState === 'Running'"
+        class="rounded-ctl border border-line px-2.5 py-0.5 text-xs text-muted hover:border-[var(--md-error)] hover:text-[var(--md-error)] disabled:opacity-50"
+        :disabled="linkBusy"
+        title="退出组网（会中断经组网连进本机的 SSH、RustDesk）"
+        @click="openDisconnect"
+      >
+        断开
+      </button>
+      <button
+        v-else-if="overview"
+        class="inline-flex items-center gap-1 rounded-ctl bg-accent px-2.5 py-0.5 text-xs text-accent-fg hover:bg-accent-hover disabled:opacity-50"
+        :disabled="linkBusy"
+        title="重新连接组网（不会改动现有设置）"
+        @click="doConnect"
+      >
+        <LoaderCircle v-if="linkBusy" class="size-3.5 animate-spin" />
+        {{ linkBusy ? "正在连接…" : "连接" }}
+      </button>
       <span v-if="snapshot" class="num ml-auto text-xs text-faint">
         更新于 {{ clock(snapshot.updatedAtMs) }}
       </span>
@@ -322,6 +380,14 @@ onUnmounted(() => {
         </section>
       </template>
     </main>
+
+    <DisconnectConfirm
+      v-if="showDisconnect"
+      :busy="linkBusy"
+      :error="disconnectError"
+      @confirm="doDisconnect"
+      @cancel="showDisconnect = false"
+    />
 
     <ModeConfirm
       v-if="confirmOn !== null"
