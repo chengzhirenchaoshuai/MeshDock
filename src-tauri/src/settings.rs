@@ -14,6 +14,8 @@ pub struct Settings {
     pub theme: ThemeMode,
     /// 开机自启，默认关闭
     pub launch_on_boot: bool,
+    /// 路径变化、模式开错时发 Windows 通知，默认开启
+    pub notify: bool,
 }
 
 impl Default for Settings {
@@ -23,6 +25,7 @@ impl Default for Settings {
             home_gateway: "192.168.66.66".into(),
             theme: ThemeMode::default(),
             launch_on_boot: false,
+            notify: true,
         }
     }
 }
@@ -103,6 +106,7 @@ mod tests {
         assert_eq!(s.theme, ThemeMode::System);
         assert!(!s.launch_on_boot);
         assert_eq!(s.home_gateway, "192.168.66.66");
+        assert!(s.notify);
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
     }

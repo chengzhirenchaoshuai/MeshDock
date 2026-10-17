@@ -5,6 +5,7 @@ mod gateway;
 mod model;
 mod monitor;
 mod netcheck;
+mod notify;
 mod paths;
 mod settings;
 mod tray;
@@ -49,6 +50,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let paths = AppPaths::resolve(app.handle())?;
             let store = SettingsStore::load(paths.settings_file.clone());

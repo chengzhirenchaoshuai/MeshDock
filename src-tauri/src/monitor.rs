@@ -3,6 +3,7 @@ use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli::{self, CliError};
 use crate::gateway;
 use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
+use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
 use serde::Serialize;
@@ -10,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Notify;
 
 /// 推给前端的快照事件
@@ -115,6 +117,9 @@ struct Inner {
     active_since: Mutex<Option<HashMap<String, Instant>>>,
     /// 各设备上报的网络检查结论及读取时间，只在有设备走中继时才读取
     net_infos: Mutex<Option<(Instant, Arc<NetInfos>)>>,
+    /// 路径变化与模式开错的判断状态（用于发通知）
+    paths: Mutex<PathWatcher>,
+    mismatch: Mutex<MismatchWatcher>,
     wake: Notify,
 }
 
@@ -137,6 +142,8 @@ impl Monitor {
                 local: Mutex::new(Arc::default()),
                 active_since: Mutex::new(None),
                 net_infos: Mutex::new(None),
+                paths: Mutex::new(PathWatcher::default()),
+                mismatch: Mutex::new(MismatchWatcher::default()),
                 wake: Notify::new(),
             }),
         }
@@ -255,6 +262,42 @@ impl Monitor {
         classify::with_relay_reason(conn, classify::relay_reason(infos.me.as_ref(), peer))
     }
 
+    /// 检查路径变化和模式开错，需要时发通知。关闭通知时仍然更新判断状态，重新打开后不会补发旧变化
+    fn notify_changes(&self, app: &AppHandle, overview: &Overview, enabled: bool) {
+        let now = Instant::now();
+        let mut messages = Vec::new();
+        {
+            let mut paths = self.inner.paths.lock().unwrap();
+            for d in &overview.peers {
+                let Some(change) = paths.observe(&d.id, PathClass::of(d.conn.kind), now) else {
+                    continue;
+                };
+                let title = match change.to {
+                    PathClass::Relay => format!("{} 从直连变成了中继", d.name),
+                    PathClass::Direct => format!("{} 恢复直连", d.name),
+                };
+                let body = match &d.conn.hint {
+                    Some(hint) => format!("{}。{hint}", d.conn.label),
+                    None => d.conn.label.clone(),
+                };
+                messages.push((title, body));
+            }
+        }
+        let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes);
+        if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch) {
+            let (title, body) = m.message();
+            messages.push((title.into(), body.into()));
+        }
+        if !enabled {
+            return;
+        }
+        for (title, body) in messages {
+            if let Err(e) = app.notification().builder().title(title).body(body).show() {
+                eprintln!("发送通知失败：{e}");
+            }
+        }
+    }
+
     /// 读取一次状态，保存快照、推给前端、更新托盘
     pub async fn refresh(&self, app: &AppHandle) -> Snapshot {
         let regions = self.regions().await;
@@ -265,7 +308,9 @@ impl Monitor {
             Ok(status) => {
                 let mut overview = self.overview(&status, &regions, accept_routes);
                 self.explain_relays(&mut overview.peers).await;
-                overview.location = locate(&app.state::<SettingsStore>().get());
+                let settings = app.state::<SettingsStore>().get();
+                overview.location = locate(&settings);
+                self.notify_changes(app, &overview, settings.notify);
                 Snapshot {
                     overview: Some(overview),
                     error: None,

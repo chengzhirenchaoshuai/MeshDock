@@ -136,6 +136,8 @@ export interface Settings {
   homeGateway: string;
   theme: ThemeMode;
   launchOnBoot: boolean;
+  /** 路径变化、模式开错时发 Windows 通知 */
+  notify: boolean;
 }
 
 /** 保存全部设置并立即生效（主题、开机自启） */

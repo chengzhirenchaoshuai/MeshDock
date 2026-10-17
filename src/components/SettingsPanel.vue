@@ -86,6 +86,23 @@ function saveGateway(value: string) {
       <p v-else class="text-xs text-muted">当前读不到默认网关，设备页会改为手动标记。</p>
     </div>
 
+    <!-- 通知 -->
+    <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 class="text-sm font-semibold">通知</h2>
+      <label class="inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="size-4 accent-[var(--md-accent)]"
+          :checked="settings.notify"
+          @change="patch({ notify: ($event.target as HTMLInputElement).checked })"
+        />
+        发送 Windows 通知
+      </label>
+      <p class="text-xs text-muted">
+        设备在直连和中继之间变化（新路径持续 30 秒以上，打洞时的短暂中继不算），或在家 / 出门模式与所在位置不一致时提醒。
+      </p>
+    </div>
+
     <!-- 启动 -->
     <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
       <h2 class="text-sm font-semibold">启动</h2>
