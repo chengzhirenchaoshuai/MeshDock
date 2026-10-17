@@ -4,11 +4,13 @@ mod commands;
 mod model;
 mod monitor;
 mod netcheck;
+mod paths;
 mod settings;
 mod tray;
 mod window;
 
 use monitor::Monitor;
+use paths::AppPaths;
 use settings::SettingsStore;
 use tauri::{Manager, RunEvent, WindowEvent};
 use tray::PendingMode;
@@ -22,8 +24,9 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let config_dir = app.path().app_config_dir()?;
-            app.manage(SettingsStore::load(config_dir.join("settings.json")));
+            let paths = AppPaths::resolve(app.handle())?;
+            app.manage(SettingsStore::load(paths.settings_file.clone()));
+            app.manage(paths);
             app.manage(PendingMode::default());
             let monitor = Monitor::new();
             app.manage(monitor.clone());

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "package": "tauri build && pwsh -NoProfile -File scripts/package.ps1"
   },
   "dependencies": {
     "@lucide/vue": "1.55.0",
