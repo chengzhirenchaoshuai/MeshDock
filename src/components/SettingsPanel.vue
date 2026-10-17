@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { Monitor, Moon, Sun } from "@lucide/vue";
+import { onMounted, ref, type Component } from "vue";
+import { Bell, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
 import { getAppInfo, type AppInfo, type Settings, type ThemeMode } from "../api";
+import UiCard from "./ui/UiCard.vue";
+import UiSegmented from "./ui/UiSegmented.vue";
+import UiSwitch from "./ui/UiSwitch.vue";
 
 /** gateways：当前读到的默认网关，方便直接选作家里网关 */
 const props = defineProps<{ settings: Settings | null; gateways: string[] }>();
@@ -10,15 +13,15 @@ const emit = defineEmits<{ save: [settings: Settings] }>();
 const info = ref<AppInfo | null>(null);
 onMounted(async () => (info.value = await getAppInfo()));
 
-const themes: { id: ThemeMode; label: string; icon: unknown }[] = [
-  { id: "system", label: "跟随系统", icon: Monitor },
-  { id: "light", label: "浅色", icon: Sun },
-  { id: "dark", label: "深色", icon: Moon },
+const themes: { value: ThemeMode; label: string; icon: Component }[] = [
+  { value: "system", label: "跟随系统", icon: Monitor },
+  { value: "light", label: "浅色", icon: Sun },
+  { value: "dark", label: "深色", icon: Moon },
 ];
 
 /** 可选值与后端 settings.rs 中的 REFRESH_CHOICES、SAMPLE_CHOICES 一致 */
-const refreshChoices = [5, 10, 30, 60];
-const sampleChoices = [1, 2, 5, 10];
+const refreshChoices = [5, 10, 30, 60].map((s) => ({ value: s, label: `${s} 秒` }));
+const sampleChoices = [1, 2, 5, 10].map((m) => ({ value: m, label: `${m} 分钟` }));
 
 /** 改一项，整体保存 */
 function patch(change: Partial<Settings>) {
@@ -43,148 +46,132 @@ function saveGateway(value: string) {
 <template>
   <section v-if="settings" class="mx-auto flex max-w-3xl flex-col gap-5">
     <!-- 外观 -->
-    <div class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">外观</h2>
-      <div class="inline-flex w-fit gap-1 rounded-ctl bg-subtle p-1">
-        <button
-          v-for="t in themes"
-          :key="t.id"
-          class="inline-flex items-center gap-1.5 rounded-ctl px-3 py-1 text-sm"
-          :class="settings.theme === t.id ? 'bg-surface font-medium shadow-card' : 'text-muted hover:text-fg'"
-          @click="patch({ theme: t.id })"
-        >
-          <component :is="t.icon" class="size-4" />
-          {{ t.label }}
-        </button>
+    <UiCard title="外观" :icon="Palette">
+      <div class="flex items-center gap-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm">主题</p>
+          <p class="mt-0.5 text-xs text-muted">深色是主设计方向；跟随系统时随 Windows 的设置切换。</p>
+        </div>
+        <UiSegmented :options="themes" :model-value="settings.theme" @update:model-value="patch({ theme: $event })" />
       </div>
-    </div>
+    </UiCard>
 
     <!-- 检测周期 -->
-    <div class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">检测周期</h2>
-      <div class="flex flex-wrap items-center gap-3 text-sm">
-        <span class="w-24 text-muted">状态刷新</span>
-        <div class="inline-flex w-fit gap-1 rounded-ctl bg-subtle p-1">
-          <button
-            v-for="s in refreshChoices"
-            :key="s"
-            class="num rounded-ctl px-3 py-1"
-            :class="settings.refreshSecs === s ? 'bg-surface font-medium shadow-card' : 'text-muted hover:text-fg'"
-            @click="patch({ refreshSecs: s })"
-          >
-            {{ s }} 秒
-          </button>
+    <UiCard title="检测周期" :icon="Clock">
+      <div class="flex flex-col divide-y divide-line">
+        <div class="flex items-center gap-4 pb-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">状态刷新</p>
+            <p class="mt-0.5 text-xs text-muted">
+              窗口打开时多久读取一次组网状态。窗口关到托盘后至少 30 秒一次，只更新托盘圆点。
+            </p>
+          </div>
+          <UiSegmented
+            mono
+            :options="refreshChoices"
+            :model-value="settings.refreshSecs"
+            @update:model-value="patch({ refreshSecs: $event })"
+          />
+        </div>
+        <div class="flex items-center gap-4 pt-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">后台测速</p>
+            <p class="mt-0.5 text-xs text-muted">多久自动测一次在线设备的延迟，结果画在设备卡片的 24 小时小图上。</p>
+          </div>
+          <UiSegmented
+            mono
+            :options="sampleChoices"
+            :model-value="settings.sampleMinutes"
+            @update:model-value="patch({ sampleMinutes: $event })"
+          />
         </div>
       </div>
-      <p class="text-xs text-muted">
-        窗口打开时多久读取一次组网状态。窗口关到托盘后至少 30 秒一次，只更新托盘圆点。
-      </p>
-      <div class="flex flex-wrap items-center gap-3 text-sm">
-        <span class="w-24 text-muted">后台测速</span>
-        <div class="inline-flex w-fit gap-1 rounded-ctl bg-subtle p-1">
-          <button
-            v-for="m in sampleChoices"
-            :key="m"
-            class="num rounded-ctl px-3 py-1"
-            :class="settings.sampleMinutes === m ? 'bg-surface font-medium shadow-card' : 'text-muted hover:text-fg'"
-            @click="patch({ sampleMinutes: m })"
-          >
-            {{ m }} 分钟
-          </button>
-        </div>
-      </div>
-      <p class="text-xs text-muted">多久自动测一次在线设备的延迟，结果画在设备卡片的 24 小时小图上。</p>
-    </div>
+    </UiCard>
 
     <!-- 位置识别 -->
-    <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">在家识别</h2>
-      <p class="text-xs text-muted">
-        本机的默认网关等于家里路由器地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
-      </p>
-      <label class="flex items-center gap-3 text-sm">
-        <span class="text-muted">家里路由器地址</span>
+    <UiCard title="在家识别" :icon="House">
+      <div class="flex items-center gap-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm">家里路由器地址</p>
+          <p class="mt-0.5 text-xs text-muted">
+            本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
+          </p>
+        </div>
         <input
-          class="num w-44 rounded-ctl border border-line bg-bg px-2 py-1 select-text focus:border-accent focus:outline-none"
+          class="ui-input num w-44 text-sm select-text"
           :value="settings.homeGateway"
           @change="saveGateway(($event.target as HTMLInputElement).value)"
           @keydown.enter="($event.target as HTMLInputElement).blur()"
         />
-      </label>
-      <p v-if="gatewayError" class="text-xs text-error">{{ gatewayError }}</p>
-      <p v-if="gateways.length" class="flex flex-wrap items-center gap-2 text-xs text-muted">
+      </div>
+      <p v-if="gatewayError" class="mt-2 text-right text-xs text-error">{{ gatewayError }}</p>
+      <p v-if="gateways.length" class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs text-muted">
         当前默认网关：
         <button
           v-for="g in gateways"
           :key="g"
-          class="num rounded-full border border-line px-2 py-0.5 hover:border-accent hover:text-accent"
+          type="button"
+          class="num rounded-full border px-2.5 py-0.5 transition-colors hover:border-accent hover:text-accent"
+          :class="g === settings.homeGateway ? 'border-accent text-accent' : 'border-line'"
+          :style="g === settings.homeGateway ? { background: 'var(--md-accent-soft)' } : undefined"
           :title="`把 ${g} 设为家里路由器地址`"
           @click="saveGateway(g)"
         >
           {{ g }}{{ g === settings.homeGateway ? "（家里）" : "" }}
         </button>
       </p>
-      <p v-else class="text-xs text-muted">当前读不到默认网关，设备页会改为手动标记。</p>
-    </div>
+      <p v-else class="mt-3 border-t border-line pt-3 text-xs text-muted">当前读不到默认网关，设备页会改为手动标记。</p>
+    </UiCard>
 
     <!-- 通知 -->
-    <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">通知</h2>
-      <label class="inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          class="size-4 accent-[var(--md-accent)]"
-          :checked="settings.notify"
-          @change="patch({ notify: ($event.target as HTMLInputElement).checked })"
-        />
-        发送 Windows 通知
+    <UiCard title="通知" :icon="Bell">
+      <label class="flex cursor-pointer items-center gap-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm">发送 Windows 通知</p>
+          <p class="mt-0.5 text-xs text-muted">
+            设备在直连和中继之间变化（新路径持续 30 秒以上，打洞时的短暂中继不算），或在家 / 出门模式与所在位置不一致时提醒。
+          </p>
+        </div>
+        <UiSwitch :model-value="settings.notify" @update:model-value="patch({ notify: $event })" />
       </label>
-      <p class="text-xs text-muted">
-        设备在直连和中继之间变化（新路径持续 30 秒以上，打洞时的短暂中继不算），或在家 / 出门模式与所在位置不一致时提醒。
-      </p>
-    </div>
+    </UiCard>
 
     <!-- 启动与关闭 -->
-    <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">启动与关闭</h2>
-      <label class="inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          class="size-4 accent-[var(--md-accent)]"
-          :checked="settings.launchOnBoot"
-          @change="patch({ launchOnBoot: ($event.target as HTMLInputElement).checked })"
-        />
-        开机时自动启动（只在托盘显示，不弹出窗口）
-      </label>
-      <p class="text-xs text-muted">
-        免安装版挪到别的位置后，需要重新打开一次程序才会更新开机启动的路径。
-        <template v-if="info?.debug">当前是开发版，勾选只会保存设置，不会真正写入开机启动。</template>
-      </p>
-      <label class="mt-1 inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          class="size-4 accent-[var(--md-accent)]"
-          :checked="settings.closeToTray"
-          @change="patch({ closeToTray: ($event.target as HTMLInputElement).checked })"
-        />
-        关闭窗口时最小化到系统托盘
-      </label>
-      <p class="text-xs text-muted">
-        勾选时，点窗口右上角的关闭按钮只是隐藏到托盘，程序继续在后台检测；要退出请在托盘图标上右键选“退出”。不勾选时，关闭窗口即退出程序。
-      </p>
-    </div>
+    <UiCard title="启动与关闭" :icon="Power">
+      <div class="flex flex-col divide-y divide-line">
+        <label class="flex cursor-pointer items-center gap-4 pb-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">开机时自动启动（只在托盘显示，不弹出窗口）</p>
+            <p class="mt-0.5 text-xs text-muted">
+              免安装版挪到别的位置后，需要重新打开一次程序才会更新开机启动的路径。
+              <template v-if="info?.debug">当前是开发版，打开只会保存设置，不会真正写入开机启动。</template>
+            </p>
+          </div>
+          <UiSwitch :model-value="settings.launchOnBoot" @update:model-value="patch({ launchOnBoot: $event })" />
+        </label>
+        <label class="flex cursor-pointer items-center gap-4 pt-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">关闭窗口时最小化到系统托盘</p>
+            <p class="mt-0.5 text-xs text-muted">
+              打开时，点窗口右上角的关闭按钮只是隐藏到托盘，程序继续在后台检测；要退出请在托盘图标上右键选“退出”。关闭时，关闭窗口即退出程序。
+            </p>
+          </div>
+          <UiSwitch :model-value="settings.closeToTray" @update:model-value="patch({ closeToTray: $event })" />
+        </label>
+      </div>
+    </UiCard>
 
     <!-- 关于 -->
-    <dl
-      v-if="info"
-      class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 rounded-card border border-line bg-surface p-4 text-sm shadow-card"
-    >
-      <dt class="text-muted">版本</dt>
-      <dd class="num">{{ info.version }}{{ info.debug ? "（开发版）" : "" }}</dd>
-      <dt class="text-muted">运行方式</dt>
-      <dd>{{ info.portable ? "便携模式（数据在程序旁的 data 文件夹）" : "数据保存在用户文件夹" }}</dd>
-      <dt class="text-muted">设置文件</dt>
-      <dd class="num break-all select-text">{{ info.settingsFile }}</dd>
-    </dl>
+    <div v-if="info" class="flex items-start gap-3 rounded-card border border-dashed border-line px-4 py-3 text-xs text-muted">
+      <Info class="mt-0.5 size-4 shrink-0 text-faint" />
+      <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
+        <dt>版本</dt>
+        <dd class="num text-fg">{{ info.version }}{{ info.debug ? "（开发版）" : "" }}</dd>
+        <dt>运行方式</dt>
+        <dd>{{ info.portable ? "便携模式（数据在程序旁的 data 文件夹）" : "数据保存在用户文件夹" }}</dd>
+        <dt>设置文件</dt>
+        <dd class="num break-all select-text">{{ info.settingsFile }}</dd>
+      </dl>
+    </div>
   </section>
 </template>

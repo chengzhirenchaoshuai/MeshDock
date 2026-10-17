@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert, Unplug } from "@lucide/vue";
+import {
+  Check,
+  Gauge,
+  LayoutGrid,
+  LoaderCircle,
+  Network,
+  Plug,
+  RefreshCw,
+  Settings2,
+  Stethoscope,
+  TriangleAlert,
+  Unplug,
+} from "@lucide/vue";
 import {
   connect,
   disconnect,
@@ -21,7 +33,7 @@ import {
   type Settings,
   type Snapshot,
 } from "./api";
-import { backendLabel, clock } from "./format";
+import { backendLabel, clock, connTone } from "./format";
 import { usePing } from "./composables/usePing";
 import { useToast } from "./composables/useToast";
 import ConnectErrorDialog from "./components/ConnectErrorDialog.vue";
@@ -33,11 +45,14 @@ import ModePanel from "./components/ModePanel.vue";
 import RouterPanel from "./components/RouterPanel.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import StatusPill from "./components/ui/StatusPill.vue";
+import UiButton from "./components/ui/UiButton.vue";
+import UiCallout from "./components/ui/UiCallout.vue";
 
 const tabs = [
-  { id: "devices", label: "设备" },
-  { id: "netcheck", label: "网络体检" },
-  { id: "settings", label: "设置" },
+  { id: "devices", label: "设备", icon: LayoutGrid },
+  { id: "netcheck", label: "网络体检", icon: Stethoscope },
+  { id: "settings", label: "设置", icon: Settings2 },
 ] as const;
 const tab = ref<(typeof tabs)[number]["id"]>("devices");
 
@@ -66,6 +81,18 @@ const overall = computed(() => {
   if (o.backendState !== "Running") return { label: backendLabel(o.backendState), tone: "offline" };
   if (o.controlUnreachable) return { label: "控制端连不上", tone: "error" };
   return { label: "已连接", tone: "direct" };
+});
+
+/** 设备页顶部的概览：按连接状态统计台数，打洞中和空闲没有设备时不显示 */
+const stats = computed(() => {
+  const count = (tone: string) => peers.value.filter((p) => connTone(p.conn.kind) === tone).length;
+  return [
+    { tone: "direct", label: "直连", n: count("direct"), always: true },
+    { tone: "relay", label: "中继", n: count("relay"), always: true },
+    { tone: "punching", label: "打洞中", n: count("punching"), always: false },
+    { tone: "idle", label: "在线·空闲", n: count("idle"), always: false },
+    { tone: "offline", label: "离线", n: count("offline"), always: true },
+  ].filter((s) => s.always || s.n > 0);
 });
 
 /** 1.102.4-t1a2b3c-g4d5e6f → 1.102.4 */
@@ -208,96 +235,104 @@ onUnmounted(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <!-- 顶栏 -->
-    <header class="flex items-center gap-3 border-b border-line bg-surface px-6 py-3">
-      <Network class="size-5 text-accent" />
-      <h1 class="text-base font-semibold">MeshDock</h1>
-      <span
-        v-if="snapshot"
-        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-        :style="{
-          color: `var(--md-${overall.tone})`,
-          background: `color-mix(in srgb, var(--md-${overall.tone}) 13%, transparent)`,
-        }"
-      >
-        <span class="size-1.5 rounded-full" :style="{ background: `var(--md-${overall.tone})` }" />
-        {{ overall.label }}
-      </span>
-      <span v-if="overview" class="text-xs text-muted">
-        {{ peers.length }} 台设备<template v-if="!linkDown"> · {{ onlineCount }} 台在线</template>
-      </span>
-      <!-- 连接 / 断开组网：断开需二次确认，连接直接执行 -->
-      <button
-        v-if="overview && overview.backendState === 'Running'"
-        class="rounded-ctl border border-line px-2.5 py-0.5 text-xs text-muted hover:border-[var(--md-error)] hover:text-[var(--md-error)] disabled:opacity-50"
-        :disabled="linkBusy"
-        title="退出组网（会中断经组网连进本机的 SSH、RustDesk）"
-        @click="openDisconnect"
-      >
-        断开
-      </button>
-      <button
-        v-else-if="overview"
-        class="inline-flex items-center gap-1 rounded-ctl bg-accent px-2.5 py-0.5 text-xs text-accent-fg hover:bg-accent-hover disabled:opacity-50"
-        :disabled="linkBusy"
-        title="重新连接组网（不会改动现有设置）"
-        @click="doConnect"
-      >
-        <LoaderCircle v-if="linkBusy" class="size-3.5 animate-spin" />
-        {{ linkBusy ? "正在连接…" : "连接" }}
-      </button>
-      <span v-if="snapshot" class="num ml-auto text-xs text-faint">
-        更新于 {{ clock(snapshot.updatedAtMs) }}
-      </span>
-      <button
-        v-if="overview && tab === 'devices'"
-        class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
-        :disabled="testingAll || linkDown || testablePeers.length === 0"
-        title="测试所有在线设备的实际路径和延迟"
-        @click="testAll"
-      >
-        <LoaderCircle v-if="testingAll" class="size-4 animate-spin" />
-        <Gauge v-else class="size-4" />
-        全部测试
-      </button>
-      <button
-        class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
-        :class="{ 'ml-auto': !snapshot }"
-        :disabled="busy"
-        @click="doRefresh"
-      >
-        <RefreshCw class="size-4" :class="{ 'animate-spin': busy }" />
-        刷新
-      </button>
+    <!-- 顶栏：左边品牌和状态，右边操作；下面一行是标签页 -->
+    <header class="z-10 border-b border-line backdrop-blur-xl" style="background: var(--md-header)">
+      <div class="flex items-center gap-3 px-6 pt-3 pb-2">
+        <span
+          class="grid size-8 shrink-0 place-items-center rounded-ctl text-white"
+          style="background: var(--md-grad); box-shadow: 0 6px 16px -6px rgb(112 72 232 / 0.8)"
+        >
+          <Network class="size-[18px]" />
+        </span>
+        <h1 class="text-base font-bold tracking-tight">MeshDock</h1>
+        <StatusPill v-if="snapshot" :tone="overall.tone" :label="overall.label" />
+        <span v-if="overview" class="text-xs whitespace-nowrap text-muted">
+          <template v-if="!linkDown"><span class="num text-fg">{{ onlineCount }}</span> 台在线 / </template>共
+          <span class="num text-fg">{{ peers.length }}</span> 台
+        </span>
+
+        <div class="ml-auto flex items-center gap-2">
+          <span v-if="snapshot" class="num mr-1 text-xs text-faint" title="最近一次读取组网状态的时间">
+            {{ clock(snapshot.updatedAtMs) }}
+          </span>
+          <UiButton
+            v-if="overview && tab === 'devices'"
+            size="sm"
+            :icon="Gauge"
+            :loading="testingAll"
+            :disabled="testingAll || linkDown || testablePeers.length === 0"
+            title="测试所有在线设备的实际路径和延迟"
+            @click="testAll"
+          >
+            全部测试
+          </UiButton>
+          <UiButton size="sm" :disabled="busy" title="立即读取组网状态" @click="doRefresh">
+            <RefreshCw class="ui-btn-icon" :class="{ 'animate-spin': busy }" />
+            刷新
+          </UiButton>
+          <!-- 连接 / 断开组网：断开需二次确认，连接直接执行 -->
+          <UiButton
+            v-if="overview && overview.backendState === 'Running'"
+            variant="danger-outline"
+            size="sm"
+            :icon="Unplug"
+            :disabled="linkBusy"
+            title="退出组网（会中断经组网连进本机的 SSH、RustDesk）"
+            @click="openDisconnect"
+          >
+            断开
+          </UiButton>
+          <UiButton
+            v-else-if="overview"
+            variant="primary"
+            size="sm"
+            :icon="Plug"
+            :loading="linkBusy"
+            :disabled="linkBusy"
+            title="重新连接组网（不会改动现有设置）"
+            @click="doConnect"
+          >
+            {{ linkBusy ? "正在连接…" : "连接" }}
+          </UiButton>
+        </div>
+      </div>
+
+      <!-- 标签页 -->
+      <nav class="flex gap-1 px-4" role="tablist">
+        <button
+          v-for="t in tabs"
+          :key="t.id"
+          type="button"
+          role="tab"
+          :aria-selected="tab === t.id"
+          class="relative inline-flex items-center gap-1.5 px-3 pt-1.5 pb-2.5 text-sm transition-colors"
+          :class="tab === t.id ? 'font-medium text-fg' : 'text-muted hover:text-fg'"
+          @click="tab = t.id"
+        >
+          <component :is="t.icon" class="size-4" :class="{ 'text-accent': tab === t.id }" />
+          {{ t.label }}
+          <span
+            class="absolute inset-x-2 -bottom-px h-[3px] rounded-full transition-all duration-200"
+            :class="tab === t.id ? 'opacity-100' : 'scale-x-50 opacity-0'"
+            style="background: var(--md-grad)"
+          />
+        </button>
+      </nav>
     </header>
 
-    <!-- 标签页 -->
-    <nav class="flex gap-1 border-b border-line bg-surface px-4">
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        class="relative px-3 py-2 text-sm"
-        :class="tab === t.id ? 'font-medium text-fg' : 'text-muted hover:text-fg'"
-        @click="tab = t.id"
-      >
-        {{ t.label }}
-        <span v-if="tab === t.id" class="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-accent" />
-      </button>
-    </nav>
-
     <!-- 网络体检（与组网状态无关，出错时也能用） -->
-    <main v-show="tab === 'netcheck'" class="flex-1 overflow-y-auto px-6 py-5">
+    <main v-show="tab === 'netcheck'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
       <NetcheckPanel />
     </main>
 
-    <main v-show="tab === 'settings'" class="flex-1 overflow-y-auto px-6 py-5">
+    <main v-show="tab === 'settings'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
       <SettingsPanel :settings="settings" :gateways="overview?.location.gateways ?? []" @save="updateSettings" />
     </main>
 
-    <main v-show="tab === 'devices'" class="flex-1 overflow-y-auto px-6 py-5">
+    <main v-show="tab === 'devices'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
       <!-- 加载中 -->
       <div v-if="!snapshot" class="flex h-full items-center justify-center gap-2 text-muted">
-        <LoaderCircle class="size-5 animate-spin" />
+        <LoaderCircle class="size-5 animate-spin text-accent" />
         正在读取组网状态…
       </div>
 
@@ -305,8 +340,23 @@ onUnmounted(() => {
       <ErrorView v-else-if="snapshot.error" :error="snapshot.error" :busy="busy" @retry="doRefresh" />
 
       <template v-else-if="overview">
+        <!-- 概览：各连接状态的台数 -->
+        <div
+          v-if="peers.length"
+          class="mb-5 grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-3 transition-opacity"
+          :class="{ 'opacity-50': linkDown }"
+        >
+          <div v-for="s in stats" :key="s.tone" class="ui-card flex items-center gap-3 px-4 py-3">
+            <span class="h-8 w-1 shrink-0 rounded-full" :style="{ background: `var(--md-${s.tone})` }" />
+            <div class="min-w-0">
+              <div class="num text-2xl leading-none font-semibold" :class="{ 'text-faint': s.n === 0 }">{{ s.n }}</div>
+              <div class="mt-1 text-xs text-muted">{{ s.label }}</div>
+            </div>
+          </div>
+        </div>
+
         <ModePanel
-          class="mb-6"
+          class="mb-5"
           :overview="overview"
           :settings="settings"
           :busy="modeBusy"
@@ -316,27 +366,19 @@ onUnmounted(() => {
         />
 
         <!-- 组网断开时，下面的路由器和设备是断开前的旧信息：说明并调暗 -->
-        <div
-          v-if="linkDown"
-          class="mb-6 flex items-start gap-2 rounded-card border px-4 py-3 text-sm"
-          :style="{
-            borderColor: 'color-mix(in srgb, var(--md-offline) 40%, transparent)',
-            background: 'color-mix(in srgb, var(--md-offline) 10%, transparent)',
-          }"
-        >
-          <Unplug class="mt-0.5 size-4 shrink-0 text-muted" />
-          <p>
-            组网{{ backendLabel(overview.backendState) }}：下面的子网路由器和设备是断开前最后看到的信息，可能已经过时。点顶栏“连接”重新加入组网后会自动更新。
-          </p>
-        </div>
+        <UiCallout v-if="linkDown" tone="offline" :icon="Unplug" class="mb-5">
+          组网{{ backendLabel(overview.backendState) }}：下面的子网路由器和设备是断开前最后看到的信息，可能已经过时。点顶栏“连接”重新加入组网后会自动更新。
+        </UiCallout>
 
         <div :class="{ 'pointer-events-none opacity-50 select-none': linkDown }" :aria-disabled="linkDown">
-          <RouterPanel v-for="r in overview.routers" :key="r.name" class="mb-6" :router="r" :now="now" />
+          <RouterPanel v-for="r in overview.routers" :key="r.name" class="mb-5" :router="r" :now="now" />
         </div>
 
         <!-- 本机 -->
         <section v-if="overview.selfDevice" class="mb-6">
-          <h2 class="mb-2 text-xs font-medium text-muted">本机</h2>
+          <h2 class="mb-2.5 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted">
+            本机<span class="h-px flex-1 bg-line" />
+          </h2>
           <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             <DeviceCard
               :device="overview.selfDevice"
@@ -349,10 +391,13 @@ onUnmounted(() => {
 
         <!-- 其他设备 -->
         <section :class="{ 'pointer-events-none opacity-50 select-none': linkDown }" :aria-disabled="linkDown">
-          <h2 class="mb-2 text-xs font-medium text-muted">组网设备</h2>
-          <p v-if="peers.length === 0" class="py-12 text-center text-muted">
+          <h2 class="mb-2.5 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted">
+            组网设备<span class="num font-normal text-faint">{{ peers.length }}</span><span class="h-px flex-1 bg-line" />
+          </h2>
+          <div v-if="peers.length === 0" class="ui-card flex flex-col items-center gap-3 py-12 text-center text-muted">
+            <Network class="size-8 text-faint" />
             组网里还没有其他设备
-          </p>
+          </div>
           <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             <DeviceCard
               v-for="d in peers"
@@ -408,10 +453,20 @@ onUnmounted(() => {
     >
       <div
         v-if="toast"
-        class="fixed bottom-5 left-1/2 inline-flex -translate-x-1/2 items-center gap-2 rounded-full bg-fg px-4 py-2 text-sm text-bg shadow-card"
+        class="fixed bottom-5 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-sm shadow-raised"
+        role="status"
       >
-        <TriangleAlert v-if="toast.kind === 'error'" class="size-4" />
-        <Check v-else class="size-4" />
+        <span
+          class="grid size-5 place-items-center rounded-full"
+          :style="
+            toast.kind === 'error'
+              ? { color: 'var(--md-error)', background: 'var(--md-error-soft)' }
+              : { color: 'var(--md-direct)', background: 'var(--md-direct-soft)' }
+          "
+        >
+          <TriangleAlert v-if="toast.kind === 'error'" class="size-3.5" />
+          <Check v-else class="size-3.5" />
+        </span>
         {{ toast.text }}
       </div>
     </Transition>

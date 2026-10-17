@@ -1,22 +1,24 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, type Component } from "vue";
 import { CircleAlert, CircleCheck, CircleX, Info, Router } from "@lucide/vue";
 import type { Level, RouterHealth } from "../api";
 import { formatLatency, timeAgo } from "../format";
+import StatusPill from "./ui/StatusPill.vue";
+import UiCard from "./ui/UiCard.vue";
 
 const props = defineProps<{ router: RouterHealth; now: number }>();
 
-/** 结论级别 → 图标、状态色、文字（与网络体检一致） */
-const levelStyle: Record<Level, { icon: unknown; color: string; label: string }> = {
-  good: { icon: CircleCheck, color: "var(--md-direct)", label: "正常" },
-  info: { icon: Info, color: "var(--md-idle)", label: "正常" },
-  warn: { icon: CircleAlert, color: "var(--md-punching)", label: "注意" },
-  bad: { icon: CircleX, color: "var(--md-error)", label: "有问题" },
+/** 结论级别 → 图标、状态色名称、文字（与网络体检一致） */
+const levelStyle: Record<Level, { icon: Component; tone: string; label: string }> = {
+  good: { icon: CircleCheck, tone: "direct", label: "正常" },
+  info: { icon: Info, tone: "idle", label: "正常" },
+  warn: { icon: CircleAlert, tone: "punching", label: "注意" },
+  bad: { icon: CircleX, tone: "error", label: "有问题" },
 };
 /** 右上角总体徽标：最严重的只是“说明”时也算正常，用绿色对勾，避免灰色的“正常”看起来像不可用 */
 const overall = computed(() => levelStyle[props.router.level === "info" ? "good" : props.router.level]);
 
-/** 设备信息一行：延迟、版本、型号、系统 */
+/** 设备信息：延迟、版本、型号、系统，每项一个小标签 */
 const meta = computed(() => {
   const r = props.router;
   return [
@@ -30,30 +32,27 @@ const meta = computed(() => {
 </script>
 
 <template>
-  <section class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
-    <header class="flex items-center gap-2">
-      <Router class="size-4 text-muted" />
-      <h2 class="text-sm font-semibold">子网路由器 · {{ router.name }}</h2>
+  <UiCard :title="`子网路由器 · ${router.name}`" :icon="Router">
+    <template #actions>
       <span class="num text-xs text-muted">{{ router.routes.join("、") }}</span>
-      <span
-        class="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-        :style="{ color: overall.color, background: `color-mix(in srgb, ${overall.color} 13%, transparent)` }"
-      >
-        <component :is="overall.icon" class="size-3.5" />
-        {{ overall.label }}
-      </span>
-    </header>
-    <p class="text-xs text-muted">出门模式下访问家里局域网全靠它，这里是它自己上报的网络情况。</p>
-    <ul class="flex flex-col gap-1.5 text-sm">
-      <li v-for="(f, i) in router.findings" :key="i" class="flex items-start gap-2 leading-relaxed">
-        <component
-          :is="levelStyle[f.level].icon"
-          class="mt-0.5 size-4 shrink-0"
-          :style="{ color: levelStyle[f.level].color }"
-        />
+      <StatusPill class="ml-auto" :tone="overall.tone" :label="overall.label" :icon="overall.icon" />
+    </template>
+    <p class="mb-3 text-xs text-muted">出门模式下访问家里局域网全靠它，这里是它自己上报的网络情况。</p>
+    <ul class="flex flex-col gap-2 text-sm">
+      <li v-for="(f, i) in router.findings" :key="i" class="flex items-start gap-2.5 leading-relaxed">
+        <span
+          class="mt-px grid size-5 shrink-0 place-items-center rounded-full"
+          :style="{ color: `var(--md-${levelStyle[f.level].tone})`, background: `var(--md-${levelStyle[f.level].tone}-soft)` }"
+        >
+          <component :is="levelStyle[f.level].icon" class="size-3.5" />
+        </span>
         <span>{{ f.text }}</span>
       </li>
     </ul>
-    <p v-if="meta.length" class="border-t border-line pt-2 text-xs text-muted">{{ meta.join(" · ") }}</p>
-  </section>
+    <div v-if="meta.length" class="mt-3 flex flex-wrap gap-1.5 border-t border-line pt-3">
+      <span v-for="m in meta" :key="m!" class="rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] text-muted">
+        {{ m }}
+      </span>
+    </div>
+  </UiCard>
 </template>

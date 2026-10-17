@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { House, LoaderCircle, Plane, TriangleAlert } from "@lucide/vue";
+import { CircleCheck, House, LoaderCircle, MapPin, Plane, Route } from "@lucide/vue";
 import type { Overview, Settings } from "../api";
+import UiButton from "./ui/UiButton.vue";
+import UiCallout from "./ui/UiCallout.vue";
+import UiCard from "./ui/UiCard.vue";
+import UiSwitch from "./ui/UiSwitch.vue";
 
 const props = defineProps<{ overview: Overview; settings: Settings | null; busy: boolean }>();
 const emit = defineEmits<{
@@ -50,83 +54,85 @@ const options = computed(() => [
 </script>
 
 <template>
-  <section class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
-    <header class="flex items-center gap-3">
-      <h2 class="text-sm font-semibold">在家 / 出门模式</h2>
+  <UiCard title="在家 / 出门模式" :icon="Route">
+    <template #actions>
       <span class="text-xs text-muted">
-        当前：
-        <template v-if="mode === null">读取不到</template>
-        <template v-else>{{ mode ? "出门模式" : "在家模式" }}（子网路由 accept-routes {{ mode ? "已开启" : "已关闭" }}）</template>
+        <template v-if="mode === null">读取不到当前模式</template>
+        <template v-else>子网路由 accept-routes {{ mode ? "已开启" : "已关闭" }}</template>
       </span>
       <LoaderCircle v-if="busy" class="size-4 animate-spin text-muted" />
-      <span v-if="locationText" class="ml-auto text-xs text-muted" title="按默认网关自动识别，可在“设置”中修改家里网关">
-        位置：{{ locationText }}
+      <span
+        v-if="locationText"
+        class="ml-auto inline-flex min-w-0 items-center gap-1 text-xs text-muted"
+        title="按默认网关自动识别，可在“设置”中修改家里网关"
+      >
+        <MapPin class="size-3.5 shrink-0" />
+        <span class="truncate">{{ locationText }}</span>
       </span>
       <!-- 读不到网关时退回手动标记 -->
       <label v-else class="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
-        <input
-          type="checkbox"
-          class="size-4 accent-[var(--md-accent)]"
-          :checked="settings?.atHome === true"
-          @change="emit('setAtHome', ($event.target as HTMLInputElement).checked || null)"
-        />
         我现在在家（读不到网关，请手动标记）
+        <UiSwitch :model-value="settings?.atHome === true" @update:model-value="emit('setAtHome', $event || null)" />
       </label>
-    </header>
+    </template>
 
-    <!-- 在家却开着出门模式：2026-09-20 踩过的坑 -->
-    <div
-      v-if="atHome === true && mode === true"
-      class="flex items-center gap-3 rounded-ctl px-3 py-2.5 text-sm"
-      style="color: var(--md-error); background: color-mix(in srgb, var(--md-error) 12%, transparent)"
-    >
-      <TriangleAlert class="size-5 shrink-0" />
-      <span class="flex-1">你在家，却开着出门模式：家里局域网的流量会绕进隧道，可能变慢甚至断网。在家应关闭子网路由。</span>
-      <button
-        class="shrink-0 rounded-ctl px-3 py-1 text-white disabled:opacity-60"
-        style="background: var(--md-error)"
-        :disabled="busy"
-        @click="emit('fixHome')"
-      >
-        一键改回在家模式
-      </button>
-    </div>
-    <!-- 在外面却没开出门模式：访问不到家里局域网 -->
-    <div
-      v-else-if="atHome === false && mode === false"
-      class="flex items-center gap-3 rounded-ctl px-3 py-2.5 text-sm"
-      style="color: var(--md-punching); background: color-mix(in srgb, var(--md-punching) 12%, transparent)"
-    >
-      <TriangleAlert class="size-5 shrink-0" />
-      <span class="flex-1">你在外面，但没开出门模式：访问不到家里局域网的设备。</span>
-      <button
-        class="shrink-0 rounded-ctl border border-current px-3 py-1 disabled:opacity-60"
-        :disabled="busy"
-        @click="emit('request', true)"
-      >
-        切换到出门模式
-      </button>
-    </div>
+    <div class="flex flex-col gap-3">
+      <!-- 在家却开着出门模式：2026-09-20 踩过的坑 -->
+      <UiCallout v-if="atHome === true && mode === true" tone="error">
+        你在家，却开着出门模式：家里局域网的流量会绕进隧道，可能变慢甚至断网。在家应关闭子网路由。
+        <template #action>
+          <UiButton variant="danger" size="sm" :disabled="busy" @click="emit('fixHome')">一键改回在家模式</UiButton>
+        </template>
+      </UiCallout>
+      <!-- 在外面却没开出门模式：访问不到家里局域网 -->
+      <UiCallout v-else-if="atHome === false && mode === false" tone="punching">
+        你在外面，但没开出门模式：访问不到家里局域网的设备。
+        <template #action>
+          <UiButton size="sm" :disabled="busy" @click="emit('request', true)">切换到出门模式</UiButton>
+        </template>
+      </UiCallout>
 
-    <div class="grid grid-cols-2 gap-3">
-      <button
-        v-for="o in options"
-        :key="o.title"
-        class="flex items-start gap-3 rounded-ctl border p-3 text-left transition-colors disabled:cursor-default"
-        :class="mode === o.on ? 'border-accent bg-subtle' : 'border-line hover:bg-subtle'"
-        :disabled="busy || mode === o.on || mode === null"
-        :title="mode === o.on ? '当前就是这个模式' : `切换到${o.title}`"
-        @click="emit('request', o.on)"
-      >
-        <component :is="o.icon" class="mt-0.5 size-5 shrink-0" :class="mode === o.on ? 'text-accent' : 'text-muted'" />
-        <span>
-          <span class="flex items-center gap-2 text-sm font-medium">
-            {{ o.title }}
-            <span v-if="mode === o.on" class="rounded-full bg-accent px-1.5 text-[11px] text-accent-fg">当前</span>
+      <div class="grid grid-cols-2 gap-3">
+        <button
+          v-for="o in options"
+          :key="o.title"
+          type="button"
+          class="group relative flex items-start gap-3 overflow-hidden rounded-ctl border p-3.5 text-left transition-all duration-200 disabled:cursor-default"
+          :class="
+            mode === o.on
+              ? 'border-transparent'
+              : 'border-line bg-surface hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--md-accent)_40%,var(--md-line))] hover:shadow-card'
+          "
+          :style="
+            mode === o.on
+              ? {
+                  background: 'linear-gradient(var(--md-surface), var(--md-surface)) padding-box, var(--md-grad) border-box',
+                  boxShadow: '0 0 0 4px var(--md-accent-soft)',
+                }
+              : undefined
+          "
+          :disabled="busy || mode === o.on || mode === null"
+          :title="mode === o.on ? '当前就是这个模式' : `切换到${o.title}`"
+          @click="emit('request', o.on)"
+        >
+          <span
+            class="grid size-9 shrink-0 place-items-center rounded-ctl transition-colors"
+            :class="mode === o.on ? 'text-white' : 'bg-subtle text-muted group-hover:text-accent'"
+            :style="mode === o.on ? { background: 'var(--md-grad)' } : undefined"
+          >
+            <component :is="o.icon" class="size-5" />
           </span>
-          <span class="mt-1 block text-xs leading-relaxed text-muted">{{ o.desc }}</span>
-        </span>
-      </button>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center gap-2 text-sm font-semibold">
+              {{ o.title }}
+              <span v-if="mode === o.on" class="inline-flex items-center gap-1 text-xs font-medium text-accent">
+                <CircleCheck class="size-3.5" />当前
+              </span>
+            </span>
+            <span class="mt-1 block text-xs leading-relaxed text-muted">{{ o.desc }}</span>
+          </span>
+        </button>
+      </div>
     </div>
-  </section>
+  </UiCard>
 </template>

@@ -22,24 +22,26 @@
   /* 延迟小图：直连 / 中继，按 dataviz 校验脚本选定（浅色、深色分别校验） */
   --color-chart-direct: var(--md-chart-direct);
   --color-chart-relay: var(--md-chart-relay);
-  --radius-card: 12px;
-  --radius-ctl: 8px;
+  --radius-card: 14px;
+  --radius-ctl: 9px;
   --shadow-card: var(--md-shadow-card);
+  --shadow-raised: var(--md-shadow-raised);
+  --shadow-dialog: var(--md-shadow-dialog);
   --font-sans: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
 }
 
 /* ---------- 浅色 ---------- */
 :root {
-  --md-bg: #f5f6f8;
+  --md-bg: #f3f4fa;
   --md-surface: #ffffff;
-  --md-subtle: #eef0f3;
-  --md-line: #e2e5ea;
-  --md-fg: #1b1f24;
-  --md-muted: #626a75;
-  --md-faint: #9aa1ab;
-  --md-accent: #0e7490;
-  --md-accent-hover: #0891b2;
+  --md-subtle: #eef0f7;
+  --md-line: #e1e4ef;
+  --md-fg: #151a2d;
+  --md-muted: #5b6378;
+  --md-faint: #959cb0;
+  --md-accent: #6a46e5;
+  --md-accent-hover: #5a36d6;
   --md-accent-fg: #ffffff;
   --md-direct: #15803d;
   --md-relay: #c2410c;
@@ -49,23 +51,33 @@
   --md-idle: #5b7083;
   --md-chart-direct: #15803d;
   --md-chart-relay: #c2410c;
-  --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04);
+  /* 品牌渐变：主按钮、选中指示、程序图标底色；两端都能承载白字 */
+  --md-grad: linear-gradient(135deg, #7048e8 0%, #2f6fe0 100%);
+  --md-grad-hover: linear-gradient(135deg, #6237dc 0%, #2560d0 100%);
+  /* 背景光晕（只是装饰） */
+  --md-glow-1: rgb(112 72 232 / 0.1);
+  --md-glow-2: rgb(47 111 224 / 0.08);
+  --md-header: rgb(255 255 255 / 0.72);
+  --md-shadow-card: 0 1px 2px rgb(20 24 50 / 0.05), 0 4px 16px -6px rgb(20 24 50 / 0.08);
+  --md-shadow-raised: 0 2px 4px rgb(20 24 50 / 0.06), 0 12px 28px -8px rgb(20 24 50 / 0.16);
+  --md-shadow-dialog: 0 24px 64px -12px rgb(20 24 50 / 0.3);
+  --md-scrim: rgb(15 18 35 / 0.35);
   color-scheme: light;
 }
 
-/* ---------- 深色（暂时跟随系统，P1 再加手动切换） ---------- */
+/* ---------- 深色（主设计方向） ---------- */
 @media (prefers-color-scheme: dark) {
   :root {
-    --md-bg: #15181c;
-    --md-surface: #1e2227;
-    --md-subtle: #262b31;
-    --md-line: #323840;
-    --md-fg: #e8eaed;
-    --md-muted: #a0a7b1;
-    --md-faint: #6b727c;
-    --md-accent: #22b8d6;
-    --md-accent-hover: #4cc9e2;
-    --md-accent-fg: #0b1a1f;
+    --md-bg: #0a0e1a;
+    --md-surface: #121829;
+    --md-subtle: #1a2238;
+    --md-line: #26304a;
+    --md-fg: #e8ebf5;
+    --md-muted: #a1a9c0;
+    --md-faint: #6b7390;
+    --md-accent: #a593ff;
+    --md-accent-hover: #bcafff;
+    --md-accent-fg: #0d0a24;
     --md-direct: #4ade80;
     --md-relay: #fb923c;
     --md-offline: #8a919b;
@@ -74,9 +86,32 @@
     --md-idle: #94a8ba;
     --md-chart-direct: #16a34a;
     --md-chart-relay: #ea580c;
-    --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --md-grad: linear-gradient(135deg, #7048e8 0%, #2f6fe0 100%);
+    --md-grad-hover: linear-gradient(135deg, #7f5af0 0%, #3b7cf0 100%);
+    --md-glow-1: rgb(124 92 255 / 0.18);
+    --md-glow-2: rgb(34 211 238 / 0.09);
+    --md-header: rgb(10 14 26 / 0.7);
+    --md-shadow-card: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 8px 24px -14px rgb(0 0 0 / 0.7);
+    --md-shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 16px 36px -14px rgb(0 0 0 / 0.85);
+    --md-shadow-dialog: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 30px 80px -10px rgb(0 0 0 / 0.8);
+    --md-scrim: rgb(3 5 12 / 0.6);
     color-scheme: dark;
   }
+}
+
+/* 各状态色的淡色背景：胶囊、提示条、图标底色共用，不在模板里现拼 */
+:root {
+  --md-direct-soft: color-mix(in srgb, var(--md-direct) 14%, transparent);
+  --md-relay-soft: color-mix(in srgb, var(--md-relay) 14%, transparent);
+  --md-offline-soft: color-mix(in srgb, var(--md-offline) 14%, transparent);
+  --md-punching-soft: color-mix(in srgb, var(--md-punching) 14%, transparent);
+  --md-error-soft: color-mix(in srgb, var(--md-error) 14%, transparent);
+  --md-idle-soft: color-mix(in srgb, var(--md-idle) 14%, transparent);
+  --md-accent-soft: color-mix(in srgb, var(--md-accent) 14%, transparent);
+  /* 动效 */
+  --md-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --md-fast: 120ms;
+  --md-normal: 200ms;
 }
 
 html,
@@ -87,7 +122,12 @@ body,
 
 body {
   margin: 0;
-  background: var(--md-bg);
+  background-color: var(--md-bg);
+  /* 左上紫、右上青两团光晕，固定在窗口上 */
+  background-image:
+    radial-gradient(900px 480px at 0% -10%, var(--md-glow-1), transparent 70%),
+    radial-gradient(700px 420px at 100% -5%, var(--md-glow-2), transparent 70%);
+  background-attachment: fixed;
   color: var(--md-fg);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -99,4 +139,204 @@ body {
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* 键盘操作时的聚焦描边；鼠标点击不显示。放在 base 层，组件可用 outline-none 覆盖 */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--md-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* 细滚动条 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--md-muted) 35%, transparent) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--md-muted) 55%, transparent);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  /* ---------- 卡片 ---------- */
+  .ui-card {
+    position: relative;
+    border: 1px solid var(--md-line);
+    border-radius: var(--radius-card);
+    background: var(--md-surface);
+    box-shadow: var(--md-shadow-card);
+    transition:
+      box-shadow var(--md-normal) var(--md-ease),
+      transform var(--md-normal) var(--md-ease),
+      border-color var(--md-normal) var(--md-ease);
+  }
+  .ui-card-interactive:hover {
+    border-color: color-mix(in srgb, var(--md-accent) 30%, var(--md-line));
+    box-shadow: var(--md-shadow-raised);
+    transform: translateY(-2px);
+  }
+
+  /* ---------- 按钮 ---------- */
+  .ui-btn {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-ctl);
+    white-space: nowrap;
+    transition:
+      background-color var(--md-fast) var(--md-ease),
+      border-color var(--md-fast) var(--md-ease),
+      color var(--md-fast) var(--md-ease),
+      box-shadow var(--md-fast) var(--md-ease),
+      transform var(--md-fast) var(--md-ease);
+  }
+  .ui-btn:not(:disabled):active {
+    transform: translateY(1px);
+  }
+  .ui-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .ui-btn-xs {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1.25rem;
+  }
+  .ui-btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+  }
+  .ui-btn-md {
+    padding: 0.375rem 1rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+  .ui-btn-xs .ui-btn-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+  .ui-btn-sm .ui-btn-icon,
+  .ui-btn-md .ui-btn-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+  .ui-btn-primary {
+    background: var(--md-grad);
+    color: #fff;
+    box-shadow: 0 4px 14px -6px rgb(112 72 232 / 0.7);
+  }
+  .ui-btn-primary:not(:disabled):hover {
+    background: var(--md-grad-hover);
+    box-shadow: 0 6px 18px -6px rgb(112 72 232 / 0.85);
+  }
+  .ui-btn-secondary {
+    border-color: var(--md-line);
+    background: var(--md-surface);
+    color: var(--md-fg);
+  }
+  .ui-btn-secondary:not(:disabled):hover {
+    border-color: color-mix(in srgb, var(--md-accent) 45%, var(--md-line));
+    background: var(--md-subtle);
+  }
+  .ui-btn-ghost {
+    background: transparent;
+    color: var(--md-muted);
+  }
+  .ui-btn-ghost:not(:disabled):hover {
+    background: var(--md-subtle);
+    color: var(--md-fg);
+  }
+  .ui-btn-danger {
+    background: var(--md-error);
+    color: #fff;
+  }
+  .ui-btn-danger:not(:disabled):hover {
+    background: color-mix(in srgb, var(--md-error) 85%, #000);
+  }
+  /* 深色下错误色较浅，白字对比不够，改用深色字 */
+  @media (prefers-color-scheme: dark) {
+    .ui-btn-danger {
+      color: #2a0710;
+    }
+  }
+  .ui-btn-danger-outline {
+    border-color: var(--md-line);
+    background: transparent;
+    color: var(--md-muted);
+  }
+  .ui-btn-danger-outline:not(:disabled):hover {
+    border-color: var(--md-error);
+    background: var(--md-error-soft);
+    color: var(--md-error);
+  }
+
+  /* ---------- 输入框 ---------- */
+  .ui-input {
+    border: 1px solid var(--md-line);
+    border-radius: var(--radius-ctl);
+    background: var(--md-bg);
+    padding: 0.25rem 0.625rem;
+    transition:
+      border-color var(--md-fast) var(--md-ease),
+      box-shadow var(--md-fast) var(--md-ease);
+  }
+  .ui-input:focus {
+    border-color: var(--md-accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--md-accent-soft);
+  }
+
+  /* ---------- 代码块 / 原始输出 ---------- */
+  .ui-code {
+    border: 1px solid var(--md-line);
+    border-radius: var(--radius-ctl);
+    background: var(--md-subtle);
+  }
+}
+
+/* ---------- 动画 ---------- */
+@keyframes md-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes md-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes md-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+/* 标签页切换：v-show 从隐藏变为显示时动画会重新播放 */
+.md-pane {
+  animation: md-pane-in 220ms var(--md-ease);
+}
+
+/* 系统关闭了动画效果时，程序里也不播放 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

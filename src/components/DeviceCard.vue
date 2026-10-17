@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ArrowDown, ArrowUp, Copy, Gauge, LoaderCircle } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Copy, Gauge, MonitorSmartphone, SquareTerminal } from "@lucide/vue";
 import type { Device, PingRecord, Sample } from "../api";
 import LatencyChart from "./LatencyChart.vue";
 import { connTone, formatBytes, measureLine, timeAgo } from "../format";
-import ConnBadge from "./ConnBadge.vue";
 import OsIcon from "./OsIcon.vue";
+import StatusPill from "./ui/StatusPill.vue";
+import UiButton from "./ui/UiButton.vue";
 
 /** 测试结果覆盖状态徽标的时长 */
 const PING_OVERRIDE_MS = 30_000;
@@ -37,7 +38,8 @@ const conn = computed(() => {
   if (p?.result?.conn && props.now - p.atMs < PING_OVERRIDE_MS) return p.result.conn;
   return props.device.conn;
 });
-const hintColor = computed(() => `var(--md-${connTone(conn.value.kind)})`);
+/** 当前连接方式对应的状态色名称：胶囊、左侧色条、图标底色共用 */
+const tone = computed(() => connTone(conn.value.kind));
 
 /** 测速行：最近一次测量（手动测试或后台测速）的延迟和路径，或失败原因 */
 const pingLine = computed(() => measureLine(props.ping, props.history, props.now));
@@ -58,23 +60,38 @@ const timeLine = computed(() => {
 
 <template>
   <article
-    class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card transition-opacity"
-    :class="{ 'opacity-70': offline }"
+    class="ui-card ui-card-interactive flex flex-col gap-3 overflow-hidden p-4 pl-5"
+    :class="{ 'opacity-75': offline }"
   >
+    <!-- 左侧状态色条 -->
+    <span
+      class="absolute inset-y-0 left-0 w-[3px] transition-colors duration-300"
+      :style="{ background: `var(--md-${tone})` }"
+      aria-hidden="true"
+    />
     <header class="flex items-start gap-3">
       <div
-        class="grid size-9 shrink-0 place-items-center rounded-ctl bg-subtle"
-        :class="offline ? 'text-faint' : 'text-muted'"
+        class="grid size-10 shrink-0 place-items-center rounded-ctl transition-colors duration-300"
+        :style="
+          offline
+            ? { color: 'var(--md-faint)', background: 'var(--md-subtle)' }
+            : { color: `var(--md-${tone})`, background: `var(--md-${tone}-soft)` }
+        "
       >
         <OsIcon :os="device.os" />
       </div>
       <div class="min-w-0 flex-1">
-        <h3 class="truncate text-[15px] font-semibold" :title="device.dnsName ?? device.name">
+        <h3
+          class="truncate text-[15px] font-semibold"
+          :class="{ 'text-muted': offline }"
+          :title="device.dnsName ?? device.name"
+        >
           {{ device.name }}
         </h3>
         <button
           v-if="ip"
-          class="num group mt-0.5 inline-flex items-center gap-1 rounded text-xs text-muted hover:text-accent"
+          type="button"
+          class="num group mt-0.5 inline-flex items-center gap-1 rounded text-xs text-muted transition-colors hover:text-accent"
           title="点击复制 IP"
           @click="emit('copy', ip)"
         >
@@ -82,15 +99,15 @@ const timeLine = computed(() => {
           <Copy class="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
       </div>
-      <ConnBadge :conn="conn" />
+      <StatusPill :tone="tone" :label="conn.label" :pulse="conn.kind === 'punching'" />
     </header>
 
-    <p v-if="conn.hint" class="text-xs leading-relaxed" :style="{ color: hintColor }">
+    <p v-if="conn.hint" class="text-xs leading-relaxed" :style="{ color: `var(--md-${tone})` }">
       {{ conn.hint }}
     </p>
 
     <!-- 测速行（本机没有） -->
-    <div v-if="!isSelf" class="flex items-center gap-2 text-xs">
+    <div v-if="!isSelf" class="flex items-center gap-1.5 rounded-ctl bg-subtle py-1 pr-1 pl-2.5 text-xs">
       <Gauge class="size-3.5 shrink-0 text-muted" />
       <span
         class="min-w-0 flex-1 truncate"
@@ -99,33 +116,39 @@ const timeLine = computed(() => {
       >
         {{ testing ? "正在测试…" : pingLine.text }}
       </span>
-      <button
+      <UiButton
         v-if="device.sshAlias"
-        class="shrink-0 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        variant="ghost"
+        size="xs"
+        :icon="SquareTerminal"
         :disabled="offline"
         :title="offline ? '设备离线' : `在新终端中执行 ssh ${device.sshAlias}`"
         @click="emit('ssh', device.sshAlias)"
       >
         SSH
-      </button>
-      <button
+      </UiButton>
+      <UiButton
         v-if="rustdesk && ip"
-        class="shrink-0 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        variant="ghost"
+        size="xs"
+        :icon="MonitorSmartphone"
         :disabled="offline"
         :title="offline ? '设备离线' : `用 RustDesk 直连 ${ip}（对方需在 RustDesk 中允许 IP 直接访问）`"
         @click="emit('rustdesk', ip)"
       >
         RustDesk
-      </button>
-      <button
-        class="inline-flex shrink-0 items-center gap-1 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+      </UiButton>
+      <UiButton
+        variant="secondary"
+        size="xs"
+        :icon="Gauge"
+        :loading="testing"
         :disabled="testing || offline"
         :title="offline ? '设备离线，无法测试' : '测试实际路径和延迟'"
         @click="emit('test')"
       >
-        <LoaderCircle v-if="testing" class="size-3.5 animate-spin" />
         测试
-      </button>
+      </UiButton>
     </div>
 
     <!-- 24 小时延迟历史（本机没有） -->
@@ -138,10 +161,10 @@ const timeLine = computed(() => {
       <span v-if="note">{{ note }}</span>
       <template v-else>
         <span class="num inline-flex items-center gap-1" title="从这台设备收到的数据">
-          <ArrowDown class="size-3.5" />{{ formatBytes(device.rxBytes) }}
+          <ArrowDown class="size-3.5 text-faint" />{{ formatBytes(device.rxBytes) }}
         </span>
         <span class="num inline-flex items-center gap-1" title="发给这台设备的数据">
-          <ArrowUp class="size-3.5" />{{ formatBytes(device.txBytes) }}
+          <ArrowUp class="size-3.5 text-faint" />{{ formatBytes(device.txBytes) }}
         </span>
       </template>
       <span v-if="timeLine" class="ml-auto truncate" :title="timeLine.title">{{ timeLine.text }}</span>
