@@ -144,6 +144,10 @@ export interface Settings {
   launchOnBoot: boolean;
   /** 路径变化、模式开错时发 Windows 通知 */
   notify: boolean;
+  /** 窗口打开时的状态刷新间隔（秒）：5 / 10 / 30 / 60 */
+  refreshSecs: number;
+  /** 后台测速间隔（分钟）：1 / 2 / 5 / 10 */
+  sampleMinutes: number;
 }
 
 /** 保存全部设置并立即生效（主题、开机自启） */

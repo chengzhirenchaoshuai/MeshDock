@@ -1,4 +1,4 @@
-//! 24 小时延迟历史：后台每 5 分钟和手动测试的结果都记在这里，按设备保存到本机文件
+//! 24 小时延迟历史：后台定时测速（间隔可设置）和手动测试的结果都记在这里，按设备保存到本机文件
 use crate::classify::{ConnKind, PingResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

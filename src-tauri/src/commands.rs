@@ -115,9 +115,13 @@ pub fn save_settings(
     let saved = store
         .update(|s| *s = settings)
         .inspect_err(|e| applog::error(e))?;
-    // 家里网关或手动标记变了，立即重新识别位置
-    if saved.home_gateway != old.home_gateway || saved.at_home != old.at_home {
-        app.state::<Monitor>().wake();
+    let monitor = app.state::<Monitor>();
+    if saved.refresh_secs != old.refresh_secs || saved.sample_minutes != old.sample_minutes {
+        // 间隔改了，立即按新间隔重新计时
+        monitor.intervals_changed();
+    } else if saved.home_gateway != old.home_gateway || saved.at_home != old.at_home {
+        // 家里网关或手动标记变了，立即重新识别位置
+        monitor.wake();
     }
     if saved.theme != old.theme
         && let Some(window) = app.get_webview_window("main")

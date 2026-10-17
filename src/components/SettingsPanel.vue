@@ -16,6 +16,10 @@ const themes: { id: ThemeMode; label: string; icon: unknown }[] = [
   { id: "dark", label: "深色", icon: Moon },
 ];
 
+/** 可选值与后端 settings.rs 中的 REFRESH_CHOICES、SAMPLE_CHOICES 一致 */
+const refreshChoices = [5, 10, 30, 60];
+const sampleChoices = [1, 2, 5, 10];
+
 /** 改一项，整体保存 */
 function patch(change: Partial<Settings>) {
   if (props.settings) emit("save", { ...props.settings, ...change });
@@ -53,6 +57,43 @@ function saveGateway(value: string) {
           {{ t.label }}
         </button>
       </div>
+    </div>
+
+    <!-- 检测周期 -->
+    <div class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
+      <h2 class="text-sm font-semibold">检测周期</h2>
+      <div class="flex flex-wrap items-center gap-3 text-sm">
+        <span class="w-24 text-muted">状态刷新</span>
+        <div class="inline-flex w-fit gap-1 rounded-ctl bg-subtle p-1">
+          <button
+            v-for="s in refreshChoices"
+            :key="s"
+            class="num rounded-ctl px-3 py-1"
+            :class="settings.refreshSecs === s ? 'bg-surface font-medium shadow-card' : 'text-muted hover:text-fg'"
+            @click="patch({ refreshSecs: s })"
+          >
+            {{ s }} 秒
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-muted">
+        窗口打开时多久读取一次组网状态。窗口关到托盘后至少 30 秒一次，只更新托盘圆点。
+      </p>
+      <div class="flex flex-wrap items-center gap-3 text-sm">
+        <span class="w-24 text-muted">后台测速</span>
+        <div class="inline-flex w-fit gap-1 rounded-ctl bg-subtle p-1">
+          <button
+            v-for="m in sampleChoices"
+            :key="m"
+            class="num rounded-ctl px-3 py-1"
+            :class="settings.sampleMinutes === m ? 'bg-surface font-medium shadow-card' : 'text-muted hover:text-fg'"
+            @click="patch({ sampleMinutes: m })"
+          >
+            {{ m }} 分钟
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-muted">多久自动测一次在线设备的延迟，结果画在设备卡片的 24 小时小图上。</p>
     </div>
 
     <!-- 位置识别 -->

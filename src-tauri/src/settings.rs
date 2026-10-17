@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default, rename_all = "camelCase")]
@@ -16,7 +17,18 @@ pub struct Settings {
     pub launch_on_boot: bool,
     /// 路径变化、模式开错时发 Windows 通知，默认开启
     pub notify: bool,
+    /// 窗口打开时的状态刷新间隔（秒），只能取 REFRESH_CHOICES 中的值
+    pub refresh_secs: u64,
+    /// 后台测速间隔（分钟），只能取 SAMPLE_CHOICES 中的值
+    pub sample_minutes: u64,
 }
+
+/// 状态刷新间隔的可选值（秒）
+pub const REFRESH_CHOICES: [u64; 4] = [5, 10, 30, 60];
+/// 后台测速间隔的可选值（分钟）。最长 10 分钟：延迟小图把相隔超过 15 分钟的两次测量画成断开
+pub const SAMPLE_CHOICES: [u64; 4] = [1, 2, 5, 10];
+/// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
+const HIDDEN_MIN_SECS: u64 = 30;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -26,7 +38,38 @@ impl Default for Settings {
             theme: ThemeMode::default(),
             launch_on_boot: false,
             notify: true,
+            refresh_secs: 10,
+            sample_minutes: 5,
         }
+    }
+}
+
+impl Settings {
+    /// 把不在可选范围内的间隔改回默认值（设置文件被手动改过、或前端传来意外的值时）
+    pub fn sanitized(mut self) -> Self {
+        let default = Self::default();
+        if !REFRESH_CHOICES.contains(&self.refresh_secs) {
+            self.refresh_secs = default.refresh_secs;
+        }
+        if !SAMPLE_CHOICES.contains(&self.sample_minutes) {
+            self.sample_minutes = default.sample_minutes;
+        }
+        self
+    }
+
+    /// 状态刷新间隔：窗口打开时按设置，隐藏时至少 30 秒
+    pub fn refresh_interval(&self, window_visible: bool) -> Duration {
+        let secs = if window_visible {
+            self.refresh_secs
+        } else {
+            self.refresh_secs.max(HIDDEN_MIN_SECS)
+        };
+        Duration::from_secs(secs)
+    }
+
+    /// 后台测速间隔
+    pub fn sample_interval(&self) -> Duration {
+        Duration::from_secs(self.sample_minutes * 60)
     }
 }
 
@@ -58,7 +101,9 @@ pub struct SettingsStore {
 impl SettingsStore {
     /// 读取设置；文件不存在或损坏时使用默认值
     pub fn load(path: PathBuf) -> Self {
-        let current = crate::paths::load_json(&path).unwrap_or_default();
+        let current = crate::paths::load_json::<Settings>(&path)
+            .unwrap_or_default()
+            .sanitized();
         Self {
             path,
             current: Mutex::new(current),
@@ -75,6 +120,7 @@ impl SettingsStore {
         // 先在副本上修改，写盘成功后才替换内存中的设置，避免两者不一致
         let mut next = current.clone();
         f(&mut next);
+        let next = next.sanitized();
         let text = serde_json::to_string_pretty(&next).map_err(|e| e.to_string())?;
         crate::paths::write_atomic(&self.path, text.as_bytes())
             .map_err(|e| format!("保存设置失败：{e}"))?;
@@ -105,8 +151,34 @@ mod tests {
         assert!(!s.launch_on_boot);
         assert_eq!(s.home_gateway, "192.168.66.66");
         assert!(s.notify);
+        assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn 间隔不在可选范围时改回默认值() {
+        let s: Settings =
+            serde_json::from_str(r#"{ "refreshSecs": 1, "sampleMinutes": 999 }"#).unwrap();
+        let s = s.sanitized();
+        assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
+        let s: Settings =
+            serde_json::from_str(r#"{ "refreshSecs": 60, "sampleMinutes": 1 }"#).unwrap();
+        let s = s.sanitized();
+        assert_eq!((s.refresh_secs, s.sample_minutes), (60, 1));
+        assert_eq!(s.sample_interval(), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn 窗口隐藏时刷新间隔至少_30_秒() {
+        let mut s = Settings {
+            refresh_secs: 5,
+            ..Default::default()
+        };
+        assert_eq!(s.refresh_interval(true), Duration::from_secs(5));
+        assert_eq!(s.refresh_interval(false), Duration::from_secs(30));
+        s.refresh_secs = 60;
+        assert_eq!(s.refresh_interval(false), Duration::from_secs(60));
     }
 
     #[test]

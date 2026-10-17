@@ -136,7 +136,7 @@ const timeLine = computed(() => {
     <!-- 24 小时延迟历史（本机没有） -->
     <template v-if="!isSelf">
       <LatencyChart v-if="history?.length" :samples="history" :now="now" />
-      <p v-else class="text-[11px] text-faint">还没有延迟历史，程序运行时每 5 分钟自动测一次</p>
+      <p v-else class="text-[11px] text-faint">还没有延迟历史，程序运行时会按设置的间隔自动测速</p>
     </template>
 
     <footer class="mt-auto flex items-center gap-4 border-t border-line pt-3 text-xs text-muted">

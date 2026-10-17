@@ -20,11 +20,6 @@ use tokio::sync::Notify;
 /// 推给前端的快照事件
 pub const SNAPSHOT_EVENT: &str = "snapshot";
 
-/// 窗口可见时的刷新间隔
-const INTERVAL_VISIBLE: Duration = Duration::from_secs(10);
-/// 窗口隐藏时只需更新托盘，降低频率
-const INTERVAL_HIDDEN: Duration = Duration::from_secs(30);
-
 /// 一台设备，给前端展示用
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -85,7 +80,6 @@ pub struct Location {
 /// 延迟历史更新时推给前端的事件
 pub const HISTORY_EVENT: &str = "history";
 const HISTORY_FIRST_DELAY: Duration = Duration::from_secs(30);
-const HISTORY_INTERVAL: Duration = Duration::from_secs(300);
 
 /// 记入历史并推给前端（后台测量和手动测试共用）
 pub fn record_history(app: &AppHandle, samples: Vec<(String, Sample)>) {
@@ -147,6 +141,8 @@ struct Inner {
     paths: Mutex<PathWatcher>,
     mismatch: Mutex<MismatchWatcher>,
     wake: Notify,
+    /// 唤醒后台测速循环（测速间隔改了时）
+    history_wake: Notify,
     /// 刷新排队执行：后台循环、手动刷新、连接 / 断开、切换模式可能同时发起刷新，
     /// 不加锁时先开始的刷新可能后结束，用旧快照覆盖新快照，通知判断也会被重复推进
     refreshing: tokio::sync::Mutex<()>,
@@ -199,7 +195,7 @@ impl<T: Clone> Ttl<T> {
 
 /// RustDesk 是否安装，多久重新检测一次
 const RUSTDESK_TTL: Duration = Duration::from_secs(60);
-/// accept-routes 多久重新读取一次。窗口可见时（10 秒一轮）每 3 轮读一次；
+/// accept-routes 多久重新读取一次。默认刷新间隔（10 秒）下每 3 轮读一次；
 /// 本程序切换模式、连接、断开后立即重新读取
 const PREFS_TTL: Duration = Duration::from_secs(30);
 
@@ -230,6 +226,7 @@ impl Monitor {
                 paths: Mutex::new(PathWatcher::default()),
                 mismatch: Mutex::new(MismatchWatcher::default()),
                 wake: Notify::new(),
+                history_wake: Notify::new(),
                 refreshing: tokio::sync::Mutex::new(()),
                 ssh_hosts: launch::SshHostsCache::default(),
                 rustdesk: Ttl::new(RUSTDESK_TTL),
@@ -246,11 +243,10 @@ impl Monitor {
             let app = refresh_app;
             loop {
                 this.refresh(&app).await;
-                let interval = if window_visible(&app) {
-                    INTERVAL_VISIBLE
-                } else {
-                    INTERVAL_HIDDEN
-                };
+                let interval = app
+                    .state::<SettingsStore>()
+                    .get()
+                    .refresh_interval(window_visible(&app));
                 // 到时间或被要求立即刷新，二者先到为准
                 tokio::select! {
                     _ = tokio::time::sleep(interval) => {}
@@ -258,15 +254,32 @@ impl Monitor {
                 }
             }
         });
-        // 延迟历史：启动 30 秒后开始，之后每 5 分钟测一次在线设备
+        // 延迟历史：启动 30 秒后开始，之后按设置的间隔测一次在线设备
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(HISTORY_FIRST_DELAY).await;
             loop {
                 this.sample_history(&app).await;
-                tokio::time::sleep(HISTORY_INTERVAL).await;
+                let last = Instant::now();
+                // 等到下一次测速；期间改了间隔会被唤醒，按新间隔重新计算剩余时间
+                loop {
+                    let interval = app.state::<SettingsStore>().get().sample_interval();
+                    let Some(left) = interval.checked_sub(last.elapsed()) else {
+                        break;
+                    };
+                    tokio::select! {
+                        _ = tokio::time::sleep(left) => {}
+                        _ = this.inner.history_wake.notified() => {}
+                    }
+                }
             }
         });
+    }
+
+    /// 刷新或测速间隔改了：立即按新间隔重新计时
+    pub fn intervals_changed(&self) {
+        self.inner.wake.notify_one();
+        self.inner.history_wake.notify_one();
     }
 
     /// 并发 ping 所有在线设备，结果记入历史
