@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ArrowDown, ArrowUp, Copy, Gauge, LoaderCircle } from "@lucide/vue";
-import type { Device, PingRecord } from "../api";
+import type { Device, PingRecord, Sample } from "../api";
+import LatencyChart from "./LatencyChart.vue";
 import { clock, connTone, formatBytes, formatLatency, timeAgo } from "../format";
 import ConnBadge from "./ConnBadge.vue";
 import OsIcon from "./OsIcon.vue";
@@ -20,6 +21,8 @@ const props = defineProps<{
   ping?: PingRecord;
   testing?: boolean;
   rustdesk?: boolean;
+  /** 最近 24 小时的延迟测量 */
+  history?: Sample[];
 }>();
 const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string] }>();
 
@@ -129,6 +132,12 @@ const timeLine = computed(() => {
         测试
       </button>
     </div>
+
+    <!-- 24 小时延迟历史（本机没有） -->
+    <template v-if="!isSelf">
+      <LatencyChart v-if="history?.length" :samples="history" :now="now" />
+      <p v-else class="text-[11px] text-faint">还没有延迟历史，程序运行时每 5 分钟自动测一次</p>
+    </template>
 
     <footer class="mt-auto flex items-center gap-4 border-t border-line pt-3 text-xs text-muted">
       <span v-if="note">{{ note }}</span>

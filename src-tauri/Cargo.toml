@@ -20,7 +20,7 @@ tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-tokio = { version = "1", features = ["process", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["process", "time", "sync", "macros", "rt"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

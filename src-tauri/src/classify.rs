@@ -1,6 +1,6 @@
 //! 连接方式判断（实施计划第 3 节）与 ping 结果解析，全部是纯函数
 use crate::model::{DerpMap, NetInfo, PeerStatus, Status, non_empty};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
@@ -13,7 +13,7 @@ const SELF_HOSTED_NAME: &str = "广州";
 pub const PUNCH_WINDOW: Duration = Duration::from_secs(15);
 
 /// 连接方式，前端据此选择颜色
-#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ConnKind {
     /// 本机

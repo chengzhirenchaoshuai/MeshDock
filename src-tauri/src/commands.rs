@@ -1,6 +1,7 @@
 //! 暴露给前端的命令
 use crate::classify::PingResult;
 use crate::cli::{self, CliError, ErrorKind};
+use crate::history::{History, HistoryStore, Sample};
 use crate::monitor::{Monitor, Snapshot};
 use crate::netcheck::{self, Report};
 use crate::paths::AppPaths;
@@ -25,13 +26,30 @@ pub async fn refresh(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snap
 
 /// 测试到某台设备的实际路径和延迟。“全部测试”由前端并发调用
 #[tauri::command]
-pub async fn ping(ip: String, monitor: State<'_, Monitor>) -> Result<PingResult, CliError> {
+pub async fn ping(
+    ip: String,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<PingResult, CliError> {
     let regions = monitor.regions().await;
     let mut result = cli::ping(&ip, &regions, &monitor.local()).await?;
+    // 手动测试的结果也记入延迟历史
+    if let Some(id) = monitor.device_id_for_ip(&ip) {
+        crate::monitor::record_history(
+            &app,
+            vec![(id, Sample::from_ping(crate::monitor::now_ms(), &result))],
+        );
+    }
     if let Some(conn) = result.conn.take() {
         result.conn = Some(monitor.explain_ping(&ip, conn).await);
     }
     Ok(result)
+}
+
+/// 全部设备最近 24 小时的延迟历史
+#[tauri::command]
+pub fn get_history(store: State<'_, HistoryStore>) -> History {
+    store.get()
 }
 
 /// 本机网络体检，约 4 秒

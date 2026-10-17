@@ -19,6 +19,9 @@
   --color-punching: var(--md-punching);
   --color-error: var(--md-error);
   --color-idle: var(--md-idle);
+  /* 延迟小图：直连 / 中继，按 dataviz 校验脚本选定（浅色、深色分别校验） */
+  --color-chart-direct: var(--md-chart-direct);
+  --color-chart-relay: var(--md-chart-relay);
   --radius-card: 12px;
   --radius-ctl: 8px;
   --shadow-card: var(--md-shadow-card);
@@ -44,6 +47,8 @@
   --md-punching: #a16207;
   --md-error: #be123c;
   --md-idle: #5b7083;
+  --md-chart-direct: #15803d;
+  --md-chart-relay: #c2410c;
   --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 2px 8px rgb(0 0 0 / 0.04);
   color-scheme: light;
 }
@@ -67,6 +72,8 @@
     --md-punching: #facc15;
     --md-error: #fb7185;
     --md-idle: #94a8ba;
+    --md-chart-direct: #16a34a;
+    --md-chart-relay: #ea580c;
     --md-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
     color-scheme: dark;
   }

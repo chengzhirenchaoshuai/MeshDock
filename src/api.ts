@@ -171,3 +171,17 @@ export const onModeRequest = (cb: () => void): Promise<UnlistenFn> => listen("mo
 export const openSsh = (alias: string) => invoke<void>("open_ssh", { alias });
 /** 用 RustDesk 直连组网 IP */
 export const openRustdesk = (ip: string) => invoke<void>("open_rustdesk", { ip });
+
+/** 一次延迟测量；没有回应时 ms 与 kind 为 null */
+export interface Sample {
+  atMs: number;
+  ms: number | null;
+  kind: ConnKind | null;
+}
+
+/** 设备 id → 最近 24 小时的测量（按时间排列） */
+export type History = Record<string, Sample[]>;
+
+export const getHistory = () => invoke<History>("get_history");
+export const onHistory = (cb: (h: History) => void): Promise<UnlistenFn> =>
+  listen<History>("history", (e) => cb(e.payload));

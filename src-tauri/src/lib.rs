@@ -2,6 +2,7 @@ mod classify;
 mod cli;
 mod commands;
 mod gateway;
+mod history;
 mod launch;
 mod model;
 mod monitor;
@@ -12,6 +13,7 @@ mod settings;
 mod tray;
 mod window;
 
+use history::HistoryStore;
 use monitor::Monitor;
 use paths::AppPaths;
 use settings::SettingsStore;
@@ -57,6 +59,10 @@ pub fn run() {
             let store = SettingsStore::load(paths.settings_file.clone());
             let settings = store.get();
             app.manage(store);
+            app.manage(HistoryStore::load(
+                paths.history_file.clone(),
+                monitor::now_ms(),
+            ));
             app.manage(paths);
             app.manage(PendingMode::default());
             if let Err(e) = sync_autostart(app.handle(), settings.launch_on_boot) {
@@ -76,6 +82,7 @@ pub fn run() {
             commands::get_snapshot,
             commands::refresh,
             commands::ping,
+            commands::get_history,
             commands::run_netcheck,
             commands::get_settings,
             commands::take_mode_request,

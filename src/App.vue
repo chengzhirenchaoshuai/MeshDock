@@ -2,8 +2,10 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Check, Gauge, LoaderCircle, Network, RefreshCw, TriangleAlert } from "@lucide/vue";
 import {
+  getHistory,
   getSettings,
   getSnapshot,
+  onHistory,
   onModeRequest,
   onSnapshot,
   openRustdesk,
@@ -14,6 +16,7 @@ import {
   setAcceptRoutes,
   takeModeRequest,
   type CliError,
+  type History,
   type Device,
   type PingRecord,
   type Settings,
@@ -41,6 +44,8 @@ const now = ref(Date.now());
 const toast = ref<string | null>(null);
 /** 设备 id → 最近一次测试结果（只存在内存里） */
 const pings = ref<Record<string, PingRecord>>({});
+/** 设备 id → 最近 24 小时的延迟测量 */
+const history = ref<History>({});
 /** 正在测试的设备 id */
 const testing = ref<Set<string>>(new Set());
 
@@ -172,6 +177,8 @@ const unlisteners: (() => void)[] = [];
 let clockTimer: number | undefined;
 onMounted(async () => {
   unlisteners.push(await onSnapshot((s) => (snapshot.value = s)));
+  unlisteners.push(await onHistory((h) => (history.value = h)));
+  history.value = await getHistory();
   unlisteners.push(await onModeRequest(takeTrayRequest));
   clockTimer = window.setInterval(() => (now.value = Date.now()), 5_000);
   settings.value = await getSettings();
@@ -303,6 +310,7 @@ onUnmounted(() => {
               :testing="testing.has(d.id)"
               @copy="copyIp"
               :rustdesk="overview.rustdesk"
+              :history="history[d.id]"
               @test="testOne(d)"
               @ssh="launch(openSsh, $event)"
               @rustdesk="launch(openRustdesk, $event)"

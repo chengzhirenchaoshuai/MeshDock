@@ -2,6 +2,7 @@
 use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli::{self, CliError};
 use crate::gateway;
+use crate::history::{HistoryStore, Sample};
 use crate::launch;
 use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
 use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
@@ -76,6 +77,21 @@ pub struct Location {
     pub gateways: Vec<String>,
     /// 设置中的家里网关
     pub home_gateway: String,
+}
+
+/// 延迟历史更新时推给前端的事件
+pub const HISTORY_EVENT: &str = "history";
+const HISTORY_FIRST_DELAY: Duration = Duration::from_secs(30);
+const HISTORY_INTERVAL: Duration = Duration::from_secs(300);
+
+/// 记入历史并推给前端（后台测量和手动测试共用）
+pub fn record_history(app: &AppHandle, samples: Vec<(String, Sample)>) {
+    if samples.is_empty() {
+        return;
+    }
+    let store = app.state::<HistoryStore>();
+    store.add(samples, now_ms());
+    let _ = app.emit(HISTORY_EVENT, store.get());
 }
 
 /// 读取默认网关并判断位置
@@ -157,7 +173,9 @@ impl Monitor {
     /// 启动后台循环
     pub fn start(&self, app: AppHandle) {
         let this = self.clone();
+        let refresh_app = app.clone();
         tauri::async_runtime::spawn(async move {
+            let app = refresh_app;
             loop {
                 this.refresh(&app).await;
                 let interval = if window_visible(&app) {
@@ -172,6 +190,49 @@ impl Monitor {
                 }
             }
         });
+        // 延迟历史：启动 30 秒后开始，之后每 5 分钟测一次在线设备
+        let this = self.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(HISTORY_FIRST_DELAY).await;
+            loop {
+                this.sample_history(&app).await;
+                tokio::time::sleep(HISTORY_INTERVAL).await;
+            }
+        });
+    }
+
+    /// 并发 ping 所有在线设备，结果记入历史
+    async fn sample_history(&self, app: &AppHandle) {
+        let targets: Vec<(String, String)> = self
+            .latest()
+            .and_then(|s| s.overview)
+            .map(|o| o.peers)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|d| d.conn.kind != ConnKind::Offline)
+            .filter_map(|d| {
+                let ip = d.ips.iter().find(|a| !a.contains(':'))?.clone();
+                Some((d.id, ip))
+            })
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let regions = self.regions().await;
+        let local = self.local();
+        let mut set = tokio::task::JoinSet::new();
+        for (id, ip) in targets {
+            let (regions, local) = (regions.clone(), local.clone());
+            set.spawn(async move { (id, cli::ping(&ip, &regions, &local).await) });
+        }
+        let mut samples = Vec::new();
+        while let Some(Ok((id, result))) = set.join_next().await {
+            // 命令本身出错（如服务没运行）不记录，避免把故障画成“无回应”
+            if let Ok(r) = result {
+                samples.push((id, Sample::from_ping(now_ms(), &r)));
+            }
+        }
+        record_history(app, samples);
     }
 
     /// 要求后台立即刷新一次（托盘“刷新”、窗口重新显示时）
@@ -246,6 +307,16 @@ impl Monitor {
             let reason = classify::relay_reason(infos.me.as_ref(), peer);
             d.conn = classify::with_relay_reason(d.conn.clone(), reason);
         }
+    }
+
+    /// 按组网 IP 在最近的快照里找到设备 id
+    pub fn device_id_for_ip(&self, ip: &str) -> Option<String> {
+        self.latest()?
+            .overview?
+            .peers
+            .into_iter()
+            .find(|d| d.ips.iter().any(|a| a == ip))
+            .map(|d| d.id)
     }
 
     /// 测速结果是中继时补上原因：按 IP 在最近的快照里找到设备
