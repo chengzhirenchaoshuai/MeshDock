@@ -47,7 +47,24 @@ fn create(app: &AppHandle) -> Result<(), String> {
     if let Some(dir) = &app.state::<AppPaths>().webview_dir {
         builder = builder.data_directory(dir.clone());
     }
+    // 仅开发版：界面测试用。MESHDOCK_DEBUG_WINDOW 含 dark / light 时强制主题，
+    // 含 nofocus 时创建窗口不抢焦点
+    #[cfg(debug_assertions)]
+    if let Ok(flags) = std::env::var("MESHDOCK_DEBUG_WINDOW") {
+        if flags.contains("dark") {
+            builder = builder.theme(Some(tauri::Theme::Dark));
+        } else if flags.contains("light") {
+            builder = builder.theme(Some(tauri::Theme::Light));
+        }
+        if flags.contains("nofocus") {
+            builder = builder.focused(false);
+        }
+    }
     let window = builder.build().map_err(|e| e.to_string())?;
+    #[cfg(debug_assertions)]
+    if std::env::var("MESHDOCK_DEBUG_WINDOW").is_ok_and(|f| f.contains("nofocus")) {
+        return Ok(());
+    }
     let _ = window.set_focus();
     Ok(())
 }
