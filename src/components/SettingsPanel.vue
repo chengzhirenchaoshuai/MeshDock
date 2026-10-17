@@ -144,9 +144,9 @@ function saveGateway(value: string) {
       </p>
     </div>
 
-    <!-- 启动 -->
+    <!-- 启动与关闭 -->
     <div class="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 class="text-sm font-semibold">启动</h2>
+      <h2 class="text-sm font-semibold">启动与关闭</h2>
       <label class="inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
         <input
           type="checkbox"
@@ -159,6 +159,18 @@ function saveGateway(value: string) {
       <p class="text-xs text-muted">
         免安装版挪到别的位置后，需要重新打开一次程序才会更新开机启动的路径。
         <template v-if="info?.debug">当前是开发版，勾选只会保存设置，不会真正写入开机启动。</template>
+      </p>
+      <label class="mt-1 inline-flex w-fit cursor-pointer items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          class="size-4 accent-[var(--md-accent)]"
+          :checked="settings.closeToTray"
+          @change="patch({ closeToTray: ($event.target as HTMLInputElement).checked })"
+        />
+        关闭窗口时最小化到系统托盘
+      </label>
+      <p class="text-xs text-muted">
+        勾选时，点窗口右上角的关闭按钮只是隐藏到托盘，程序继续在后台检测；要退出请在托盘图标上右键选“退出”。不勾选时，关闭窗口即退出程序。
       </p>
     </div>
 

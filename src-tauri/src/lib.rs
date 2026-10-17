@@ -116,11 +116,17 @@ pub fn run() {
             commands::open_ssh,
             commands::open_rustdesk,
         ])
-        // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
+        // 点击关闭按钮：默认只隐藏到托盘（真正退出走托盘菜单）；设置中关闭了该项时直接退出
         .on_window_event(|win, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                window::hide(win);
+                let app = win.app_handle();
+                if app.state::<SettingsStore>().get().close_to_tray {
+                    api.prevent_close();
+                    window::hide(win);
+                } else {
+                    applog::info("关闭窗口，退出程序");
+                    app.exit(0);
+                }
             }
         })
         .build(tauri::generate_context!())

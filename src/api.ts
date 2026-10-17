@@ -144,6 +144,8 @@ export interface Settings {
   launchOnBoot: boolean;
   /** 路径变化、模式开错时发 Windows 通知 */
   notify: boolean;
+  /** 点关闭按钮时最小化到托盘；false 时直接退出程序 */
+  closeToTray: boolean;
   /** 窗口打开时的状态刷新间隔（秒）：5 / 10 / 30 / 60 */
   refreshSecs: number;
   /** 后台测速间隔（分钟）：1 / 2 / 5 / 10 */

@@ -17,6 +17,8 @@ pub struct Settings {
     pub launch_on_boot: bool,
     /// 路径变化、模式开错时发 Windows 通知，默认开启
     pub notify: bool,
+    /// 点窗口关闭按钮时最小化到托盘（默认开启）；关闭则直接退出程序
+    pub close_to_tray: bool,
     /// 窗口打开时的状态刷新间隔（秒），只能取 REFRESH_CHOICES 中的值
     pub refresh_secs: u64,
     /// 后台测速间隔（分钟），只能取 SAMPLE_CHOICES 中的值
@@ -38,6 +40,7 @@ impl Default for Settings {
             theme: ThemeMode::default(),
             launch_on_boot: false,
             notify: true,
+            close_to_tray: true,
             refresh_secs: 10,
             sample_minutes: 5,
         }
@@ -152,6 +155,7 @@ mod tests {
         assert_eq!(s.home_gateway, "192.168.66.66");
         assert!(s.notify);
         assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
+        assert!(s.close_to_tray, "旧设置文件没有这一项时默认最小化到托盘");
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
     }
