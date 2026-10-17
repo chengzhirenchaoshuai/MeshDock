@@ -31,6 +31,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_snapshot,
             commands::refresh,
+            commands::ping,
         ])
         // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
         .on_window_event(|win, event| {

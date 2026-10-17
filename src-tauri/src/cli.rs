@@ -190,9 +190,16 @@ pub async fn netcheck() -> Result<Netcheck, CliError> {
     })
 }
 
-/// 测一次路径和延迟；离线设备 3 秒内返回
+/// 测一次路径和延迟；离线设备 3 秒内返回。
+/// 只接受合法 IP，避免把以 `-` 开头的文本当成命令选项传给 tailscale
 pub async fn ping(ip: &str, regions: &Regions) -> Result<PingResult, CliError> {
-    let out = run(&["ping", "-c", "1", "--timeout", "3s", ip]).await?;
+    let ip: std::net::IpAddr = ip.parse().map_err(|_| CliError {
+        kind: ErrorKind::Failed,
+        message: "IP 地址格式不正确".into(),
+        raw: ip.into(),
+    })?;
+    let ip = ip.to_string();
+    let out = run(&["ping", "-c", "1", "--timeout", "3s", &ip]).await?;
     Ok(parse_ping(&out.text(), regions))
 }
 
@@ -212,6 +219,12 @@ mod tests {
         let text =
             "failed to connect to local tailscaled process; is the Tailscale service running?";
         assert_eq!(known_failure(text), Some(ErrorKind::ServiceDown));
+    }
+
+    #[tokio::test]
+    async fn 拒绝非法_ip() {
+        let e = ping("--help", &Regions::default()).await.unwrap_err();
+        assert_eq!(e.message, "IP 地址格式不正确");
     }
 
     #[test]

@@ -69,3 +69,8 @@ export function connTone(kind: ConnKind): string {
       return "idle";
   }
 }
+
+/** 延迟毫秒 → “1 ms” / “0.4 ms” */
+export function formatLatency(ms: number): string {
+  return ms < 10 ? `${Number(ms.toFixed(1))} ms` : `${Math.round(ms)} ms`;
+}

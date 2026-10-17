@@ -1,16 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { Check, LoaderCircle, Network, RefreshCw } from "@lucide/vue";
-import { getSnapshot, onSnapshot, refresh, type Snapshot } from "./api";
+import { Check, Gauge, LoaderCircle, Network, RefreshCw } from "@lucide/vue";
+import {
+  getSnapshot,
+  onSnapshot,
+  ping,
+  refresh,
+  type CliError,
+  type Device,
+  type PingRecord,
+  type Snapshot,
+} from "./api";
 import { backendLabel, clock } from "./format";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
 
 const snapshot = ref<Snapshot | null>(null);
 const busy = ref(false);
-/** 用于“X 分钟前”的当前时间，每 30 秒更新一次 */
+/** 当前时间，每 5 秒更新：用于“X 分钟前”和测试结果的 30 秒覆盖 */
 const now = ref(Date.now());
 const toast = ref<string | null>(null);
+/** 设备 id → 最近一次测试结果（只存在内存里） */
+const pings = ref<Record<string, PingRecord>>({});
+/** 正在测试的设备 id */
+const testing = ref<Set<string>>(new Set());
 
 const overview = computed(() => snapshot.value?.overview ?? null);
 const peers = computed(() => overview.value?.peers ?? []);
@@ -38,6 +51,31 @@ async function doRefresh() {
   }
 }
 
+/** 设备的组网 IPv4，测试用 */
+const deviceIp = (d: Device) => d.ips.find((a) => !a.includes(":")) ?? d.ips[0];
+
+async function testOne(d: Device) {
+  const ip = deviceIp(d);
+  if (!ip || testing.value.has(d.id)) return;
+  testing.value = new Set(testing.value).add(d.id);
+  let record: PingRecord;
+  try {
+    record = { result: await ping(ip), error: null, atMs: Date.now() };
+  } catch (e) {
+    record = { result: null, error: e as CliError, atMs: Date.now() };
+  }
+  pings.value = { ...pings.value, [d.id]: record };
+  now.value = Date.now();
+  const next = new Set(testing.value);
+  next.delete(d.id);
+  testing.value = next;
+}
+
+/** 并发测试所有在线设备，离线的跳过 */
+const testablePeers = computed(() => peers.value.filter((p) => p.conn.kind !== "offline"));
+const testingAll = computed(() => testing.value.size > 0);
+const testAll = () => Promise.all(testablePeers.value.map(testOne));
+
 let toastTimer: number | undefined;
 async function copyIp(ip: string) {
   try {
@@ -54,7 +92,7 @@ let unlisten: (() => void) | undefined;
 let clockTimer: number | undefined;
 onMounted(async () => {
   unlisten = await onSnapshot((s) => (snapshot.value = s));
-  clockTimer = window.setInterval(() => (now.value = Date.now()), 30_000);
+  clockTimer = window.setInterval(() => (now.value = Date.now()), 5_000);
   snapshot.value = await getSnapshot();
 });
 onUnmounted(() => {
@@ -86,6 +124,17 @@ onUnmounted(() => {
       <span v-if="snapshot" class="num ml-auto text-xs text-faint">
         更新于 {{ clock(snapshot.updatedAtMs) }}
       </span>
+      <button
+        v-if="overview"
+        class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
+        :disabled="testingAll || testablePeers.length === 0"
+        title="测试所有在线设备的实际路径和延迟"
+        @click="testAll"
+      >
+        <LoaderCircle v-if="testingAll" class="size-4 animate-spin" />
+        <Gauge v-else class="size-4" />
+        全部测试
+      </button>
       <button
         class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
         :class="{ 'ml-auto': !snapshot }"
@@ -128,7 +177,16 @@ onUnmounted(() => {
             组网里还没有其他设备
           </p>
           <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-            <DeviceCard v-for="d in peers" :key="d.id" :device="d" :now="now" @copy="copyIp" />
+            <DeviceCard
+              v-for="d in peers"
+              :key="d.id"
+              :device="d"
+              :now="now"
+              :ping="pings[d.id]"
+              :testing="testing.has(d.id)"
+              @copy="copyIp"
+              @test="testOne(d)"
+            />
           </div>
         </section>
       </template>

@@ -62,3 +62,21 @@ export const refresh = () => invoke<Snapshot>("refresh");
 /** 后台每次刷新都会推送快照 */
 export const onSnapshot = (cb: (s: Snapshot) => void): Promise<UnlistenFn> =>
   listen<Snapshot>("snapshot", (e) => cb(e.payload));
+
+export interface PingResult {
+  /** 收到回包时的实测路径 */
+  conn: Conn | null;
+  latencyMs: number | null;
+  /** 没收到回包时的中文原因 */
+  error: string | null;
+  raw: string;
+}
+
+export const ping = (ip: string) => invoke<PingResult>("ping", { ip });
+
+/** 前端保存的一次测试结果：成功时有 result，命令本身出错时有 error */
+export interface PingRecord {
+  result: PingResult | null;
+  error: CliError | null;
+  atMs: number;
+}
