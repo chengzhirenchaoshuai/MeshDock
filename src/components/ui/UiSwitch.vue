@@ -15,7 +15,7 @@ const model = defineModel<boolean>({ required: true });
   >
     <span
       class="inline-block size-3.5 rounded-full shadow transition-transform duration-200"
-      :class="model ? 'translate-x-[18px] bg-white' : 'translate-x-[2px] bg-faint'"
+      :class="model ? 'translate-x-[18px] bg-[var(--md-grad-fg)]' : 'translate-x-[2px] bg-faint'"
     />
   </button>
 </template>

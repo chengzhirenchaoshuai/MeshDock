@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   Check,
   Gauge,
@@ -34,6 +34,7 @@ import {
   type Snapshot,
 } from "./api";
 import { backendLabel, clock, connTone } from "./format";
+import { applyPalette } from "./palette";
 import { usePing } from "./composables/usePing";
 import { useToast } from "./composables/useToast";
 import ConnectErrorDialog from "./components/ConnectErrorDialog.vue";
@@ -159,6 +160,11 @@ async function copyIp(ip: string) {
 
 // ---------- 在家 / 出门模式 ----------
 const settings = ref<Settings | null>(null);
+// 配色方案随设置切换（读回设置、在设置页修改时）
+watch(
+  () => settings.value?.palette,
+  (p) => p && applyPalette(p),
+);
 const modeBusy = ref(false);
 /** 等待确认的目标模式：true 出门、false 在家、null 没有弹框 */
 const confirmOn = ref<boolean | null>(null);
@@ -239,8 +245,8 @@ onUnmounted(() => {
     <header class="z-10 border-b border-line backdrop-blur-xl" style="background: var(--md-header)">
       <div class="flex items-center gap-3 px-6 pt-3 pb-2">
         <span
-          class="grid size-8 shrink-0 place-items-center rounded-ctl text-white"
-          style="background: var(--md-grad); box-shadow: 0 6px 16px -6px rgb(112 72 232 / 0.8)"
+          class="grid size-8 shrink-0 place-items-center rounded-ctl text-[var(--md-grad-fg)]"
+          style="background: var(--md-grad); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--md-grad-shadow) 80%, transparent)"
         >
           <Network class="size-[18px]" />
         </span>

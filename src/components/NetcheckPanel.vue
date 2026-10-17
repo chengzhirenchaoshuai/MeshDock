@@ -47,7 +47,7 @@ const official = computed(() => report.value?.regions.filter((r) => !r.selfHoste
 <template>
   <section class="mx-auto flex max-w-3xl flex-col gap-5">
     <div class="flex items-center gap-3">
-      <span class="grid size-10 shrink-0 place-items-center rounded-card text-white" style="background: var(--md-grad)">
+      <span class="grid size-10 shrink-0 place-items-center rounded-card text-[var(--md-grad-fg)]" style="background: var(--md-grad)">
         <Stethoscope class="size-5" />
       </span>
       <div class="min-w-0">

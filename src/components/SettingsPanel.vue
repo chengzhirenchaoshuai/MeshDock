@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref, type Component } from "vue";
-import { Bell, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
+import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
 import { getAppInfo, type AppInfo, type Settings, type ThemeMode } from "../api";
+import { PALETTES } from "../palette";
 import UiCard from "./ui/UiCard.vue";
 import UiSegmented from "./ui/UiSegmented.vue";
 import UiSwitch from "./ui/UiSwitch.vue";
@@ -53,6 +54,55 @@ function saveGateway(value: string) {
           <p class="mt-0.5 text-xs text-muted">深色是主设计方向；跟随系统时随 Windows 的设置切换。</p>
         </div>
         <UiSegmented :options="themes" :model-value="settings.theme" @update:model-value="patch({ theme: $event })" />
+      </div>
+
+      <div class="mt-3 border-t border-line pt-3">
+        <p class="text-sm">配色方案</p>
+        <p class="mt-0.5 text-xs text-muted">换的是品牌色和背景色调，浅色、深色都适用；连接状态的颜色（绿、橙、黄、红、灰）不变。</p>
+        <div class="mt-3 grid grid-cols-4 gap-3" role="radiogroup" aria-label="配色方案">
+          <button
+            v-for="p in PALETTES"
+            :key="p.id"
+            type="button"
+            role="radio"
+            :aria-checked="settings.palette === p.id"
+            class="group flex flex-col gap-2 rounded-ctl border p-2 text-left transition-all duration-150"
+            :class="
+              settings.palette === p.id
+                ? 'border-accent'
+                : 'border-line hover:-translate-y-px hover:border-[color-mix(in_srgb,var(--md-accent)_40%,var(--md-line))]'
+            "
+            :style="settings.palette === p.id ? { boxShadow: '0 0 0 3px var(--md-accent-soft)' } : undefined"
+            @click="patch({ palette: p.id })"
+          >
+            <!-- 小样：按该方案的深色效果画一个缩小的窗口 -->
+            <span class="relative block h-14 overflow-hidden rounded-[7px]" :style="{ background: p.swatch.bg }">
+              <span
+                class="absolute top-2 left-2 size-3.5 rounded"
+                :style="{ background: `linear-gradient(135deg, ${p.swatch.from}, ${p.swatch.to})` }"
+              />
+              <span class="absolute top-2.5 left-7 h-1.5 w-8 rounded-full bg-white/25" />
+              <span class="absolute inset-x-2 bottom-2 flex h-5 items-center gap-1 rounded px-1.5" :style="{ background: p.swatch.card }">
+                <span class="size-1.5 rounded-full bg-[#4ade80]" />
+                <span class="h-1 w-6 rounded-full bg-white/20" />
+                <span
+                  class="ml-auto h-2.5 w-5 rounded-sm"
+                  :style="{ background: `linear-gradient(135deg, ${p.swatch.from}, ${p.swatch.to})` }"
+                />
+              </span>
+              <span
+                v-if="settings.palette === p.id"
+                class="absolute top-1.5 right-1.5 grid size-4 place-items-center rounded-full bg-white text-[#18181b]"
+              >
+                <Check class="size-3" />
+              </span>
+            </span>
+            <span class="px-0.5">
+              <span class="block text-sm font-medium">{{ p.label }}</span>
+              <span class="block text-[11px] text-muted">{{ p.desc }}</span>
+            </span>
+          </button>
+        </div>
       </div>
     </UiCard>
 

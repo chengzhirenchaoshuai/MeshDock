@@ -13,6 +13,8 @@ pub struct Settings {
     pub home_gateway: String,
     /// 外观：跟随系统 / 浅色 / 深色
     pub theme: ThemeMode,
+    /// 配色方案（品牌色、背景色调），只能取 PALETTE_CHOICES 中的值；与浅色 / 深色互相独立
+    pub palette: String,
     /// 开机自启，默认关闭
     pub launch_on_boot: bool,
     /// 路径变化、模式开错时发 Windows 通知，默认开启
@@ -29,6 +31,8 @@ pub struct Settings {
 pub const REFRESH_CHOICES: [u64; 4] = [5, 10, 30, 60];
 /// 后台测速间隔的可选值（分钟）。最长 10 分钟：延迟小图把相隔超过 15 分钟的两次测量画成断开
 pub const SAMPLE_CHOICES: [u64; 4] = [1, 2, 5, 10];
+/// 配色方案的可选值，第一个是默认值；与前端 style.css 中的 data-palette 一致
+pub const PALETTE_CHOICES: [&str; 4] = ["aurora", "ocean", "neon", "graphite"];
 /// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
 const HIDDEN_MIN_SECS: u64 = 30;
 
@@ -38,6 +42,7 @@ impl Default for Settings {
             at_home: None,
             home_gateway: "192.168.66.66".into(),
             theme: ThemeMode::default(),
+            palette: PALETTE_CHOICES[0].into(),
             launch_on_boot: false,
             notify: true,
             close_to_tray: true,
@@ -56,6 +61,9 @@ impl Settings {
         }
         if !SAMPLE_CHOICES.contains(&self.sample_minutes) {
             self.sample_minutes = default.sample_minutes;
+        }
+        if !PALETTE_CHOICES.contains(&self.palette.as_str()) {
+            self.palette = default.palette;
         }
         self
     }
@@ -158,6 +166,19 @@ mod tests {
         assert!(s.close_to_tray, "旧设置文件没有这一项时默认最小化到托盘");
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
+    }
+
+    #[test]
+    fn 配色方案不认识时改回默认值() {
+        let s: Settings = serde_json::from_str(r#"{ "atHome": true }"#).unwrap();
+        assert_eq!(s.palette, "aurora");
+        let s: Settings = serde_json::from_str(r#"{ "palette": "ocean" }"#).unwrap();
+        assert_eq!(s.sanitized().palette, "ocean");
+        // 不认识的值只影响这一项，其他设置照常保留
+        let s: Settings = serde_json::from_str(r#"{ "palette": "rainbow", "notify": false }"#).unwrap();
+        let s = s.sanitized();
+        assert_eq!(s.palette, "aurora");
+        assert!(!s.notify);
     }
 
     #[test]

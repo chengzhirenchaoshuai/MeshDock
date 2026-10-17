@@ -31,7 +31,7 @@
   --font-mono: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace;
 }
 
-/* ---------- 浅色 ---------- */
+/* ---------- 浅色（默认配色方案“极光”） ---------- */
 :root {
   --md-bg: #f3f4fa;
   --md-surface: #ffffff;
@@ -54,6 +54,9 @@
   /* 品牌渐变：主按钮、选中指示、程序图标底色；两端都能承载白字 */
   --md-grad: linear-gradient(135deg, #7048e8 0%, #2f6fe0 100%);
   --md-grad-hover: linear-gradient(135deg, #6237dc 0%, #2560d0 100%);
+  /* 渐变上的文字和图标颜色、渐变按钮的投影颜色 */
+  --md-grad-fg: #ffffff;
+  --md-grad-shadow: #7048e8;
   /* 背景光晕（只是装饰） */
   --md-glow-1: rgb(112 72 232 / 0.1);
   --md-glow-2: rgb(47 111 224 / 0.08);
@@ -65,7 +68,7 @@
   color-scheme: light;
 }
 
-/* ---------- 深色（主设计方向） ---------- */
+/* ---------- 深色（主设计方向，默认配色方案“极光”） ---------- */
 @media (prefers-color-scheme: dark) {
   :root {
     --md-bg: #0a0e1a;
@@ -88,6 +91,8 @@
     --md-chart-relay: #ea580c;
     --md-grad: linear-gradient(135deg, #7048e8 0%, #2f6fe0 100%);
     --md-grad-hover: linear-gradient(135deg, #7f5af0 0%, #3b7cf0 100%);
+    --md-grad-fg: #ffffff;
+    --md-grad-shadow: #7048e8;
     --md-glow-1: rgb(124 92 255 / 0.18);
     --md-glow-2: rgb(34 211 238 / 0.09);
     --md-header: rgb(10 14 26 / 0.7);
@@ -96,6 +101,122 @@
     --md-shadow-dialog: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 30px 80px -10px rgb(0 0 0 / 0.8);
     --md-scrim: rgb(3 5 12 / 0.6);
     color-scheme: dark;
+  }
+}
+
+/*
+ * ---------- 其他配色方案 ----------
+ * 只换品牌色、背景色调和光晕；连接状态色（绿、橙、黄、红、灰）在所有方案中保持不变。
+ * 品牌色避开绿、橙、黄、红，免得和状态色混淆。
+ * 写法：先写浅色，再在深色媒体查询里写深色；选择器比 :root 更具体，会覆盖上面的“极光”。
+ * 可选值与后端 settings.rs 的 PALETTE_CHOICES、前端 palette.ts 一致。
+ */
+
+/* 深海：蓝到青 */
+:root[data-palette="ocean"] {
+  --md-bg: #f1f5fb;
+  --md-surface: #ffffff;
+  --md-subtle: #ebf1f8;
+  --md-line: #dde5f0;
+  --md-accent: #1d5fd0;
+  --md-accent-hover: #1a4fb0;
+  --md-accent-fg: #ffffff;
+  --md-grad: linear-gradient(135deg, #2563eb 0%, #0e7490 100%);
+  --md-grad-hover: linear-gradient(135deg, #1d4ed8 0%, #155e75 100%);
+  --md-grad-fg: #ffffff;
+  --md-grad-shadow: #2563eb;
+  --md-glow-1: rgb(37 99 235 / 0.1);
+  --md-glow-2: rgb(14 165 233 / 0.08);
+  --md-header: rgb(255 255 255 / 0.72);
+}
+
+/* 霓虹：品红到紫 */
+:root[data-palette="neon"] {
+  --md-bg: #faf5fc;
+  --md-surface: #ffffff;
+  --md-subtle: #f4ecf8;
+  --md-line: #eadff0;
+  --md-accent: #a21caf;
+  --md-accent-hover: #86198f;
+  --md-accent-fg: #ffffff;
+  --md-grad: linear-gradient(135deg, #c026d3 0%, #7c3aed 100%);
+  --md-grad-hover: linear-gradient(135deg, #a21caf 0%, #6d28d9 100%);
+  --md-grad-fg: #ffffff;
+  --md-grad-shadow: #c026d3;
+  --md-glow-1: rgb(192 38 211 / 0.09);
+  --md-glow-2: rgb(124 58 237 / 0.08);
+  --md-header: rgb(255 255 255 / 0.72);
+}
+
+/* 石墨：中性灰，不带彩色 */
+:root[data-palette="graphite"] {
+  --md-bg: #f4f4f5;
+  --md-surface: #ffffff;
+  --md-subtle: #efeff1;
+  --md-line: #e4e4e7;
+  --md-accent: #3f3f46;
+  --md-accent-hover: #27272a;
+  --md-accent-fg: #ffffff;
+  --md-grad: linear-gradient(135deg, #52525b 0%, #27272a 100%);
+  --md-grad-hover: linear-gradient(135deg, #3f3f46 0%, #18181b 100%);
+  --md-grad-fg: #ffffff;
+  --md-grad-shadow: #27272a;
+  --md-glow-1: rgb(113 113 122 / 0.08);
+  --md-glow-2: rgb(161 161 170 / 0.06);
+  --md-header: rgb(255 255 255 / 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-palette="ocean"] {
+    --md-bg: #07111d;
+    --md-surface: #0e1a2a;
+    --md-subtle: #15253a;
+    --md-line: #213550;
+    --md-accent: #5fb2ff;
+    --md-accent-hover: #8cc8ff;
+    --md-accent-fg: #04121f;
+    --md-grad: linear-gradient(135deg, #2563eb 0%, #0e7490 100%);
+    --md-grad-hover: linear-gradient(135deg, #3b74f0 0%, #12839f 100%);
+    --md-grad-fg: #ffffff;
+    --md-grad-shadow: #2563eb;
+    --md-glow-1: rgb(37 99 235 / 0.2);
+    --md-glow-2: rgb(14 165 233 / 0.12);
+    --md-header: rgb(7 17 29 / 0.7);
+  }
+
+  :root[data-palette="neon"] {
+    --md-bg: #0f0a1a;
+    --md-surface: #181127;
+    --md-subtle: #221836;
+    --md-line: #34264d;
+    --md-accent: #e879f9;
+    --md-accent-hover: #f0abfc;
+    --md-accent-fg: #2a0631;
+    --md-grad: linear-gradient(135deg, #c026d3 0%, #7c3aed 100%);
+    --md-grad-hover: linear-gradient(135deg, #d03ae2 0%, #8b4cf5 100%);
+    --md-grad-fg: #ffffff;
+    --md-grad-shadow: #c026d3;
+    --md-glow-1: rgb(192 38 211 / 0.18);
+    --md-glow-2: rgb(124 58 237 / 0.14);
+    --md-header: rgb(15 10 26 / 0.7);
+  }
+
+  /* 深色下灰色渐变改浅、字改深，否则按钮和背景分不开 */
+  :root[data-palette="graphite"] {
+    --md-bg: #0b0b0d;
+    --md-surface: #151517;
+    --md-subtle: #1e1e21;
+    --md-line: #2e2e33;
+    --md-accent: #e4e4e7;
+    --md-accent-hover: #ffffff;
+    --md-accent-fg: #18181b;
+    --md-grad: linear-gradient(135deg, #f4f4f5 0%, #a1a1aa 100%);
+    --md-grad-hover: linear-gradient(135deg, #ffffff 0%, #b4b4bc 100%);
+    --md-grad-fg: #18181b;
+    --md-grad-shadow: #000000;
+    --md-glow-1: rgb(161 161 170 / 0.08);
+    --md-glow-2: rgb(113 113 122 / 0.06);
+    --md-header: rgb(11 11 13 / 0.7);
   }
 }
 
@@ -235,12 +356,12 @@ body {
   }
   .ui-btn-primary {
     background: var(--md-grad);
-    color: #fff;
-    box-shadow: 0 4px 14px -6px rgb(112 72 232 / 0.7);
+    color: var(--md-grad-fg);
+    box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--md-grad-shadow) 70%, transparent);
   }
   .ui-btn-primary:not(:disabled):hover {
     background: var(--md-grad-hover);
-    box-shadow: 0 6px 18px -6px rgb(112 72 232 / 0.85);
+    box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
   }
   .ui-btn-secondary {
     border-color: var(--md-line);

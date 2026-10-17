@@ -141,6 +141,8 @@ export interface Settings {
   /** 家里路由器地址：默认网关等于它即为在家 */
   homeGateway: string;
   theme: ThemeMode;
+  /** 配色方案，见 palette.ts 的 PALETTES；与浅色 / 深色互相独立 */
+  palette: string;
   launchOnBoot: boolean;
   /** 路径变化、模式开错时发 Windows 通知 */
   notify: boolean;

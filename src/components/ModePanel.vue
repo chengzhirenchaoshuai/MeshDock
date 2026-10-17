@@ -117,7 +117,7 @@ const options = computed(() => [
         >
           <span
             class="grid size-9 shrink-0 place-items-center rounded-ctl transition-colors"
-            :class="mode === o.on ? 'text-white' : 'bg-subtle text-muted group-hover:text-accent'"
+            :class="mode === o.on ? 'text-[var(--md-grad-fg)]' : 'bg-subtle text-muted group-hover:text-accent'"
             :style="mode === o.on ? { background: 'var(--md-grad)' } : undefined"
           >
             <component :is="o.icon" class="size-5" />
