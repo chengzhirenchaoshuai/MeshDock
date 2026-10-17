@@ -1,11 +1,12 @@
 mod classify;
-// M4 起才用到 ping、netcheck、prefs 等接口
+// M6 起才用到 prefs、set 等接口
 #[allow(dead_code)]
 mod cli;
 mod commands;
 #[allow(dead_code)]
 mod model;
 mod monitor;
+mod netcheck;
 mod tray;
 mod window;
 
@@ -32,6 +33,7 @@ pub fn run() {
             commands::get_snapshot,
             commands::refresh,
             commands::ping,
+            commands::run_netcheck,
         ])
         // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
         .on_window_event(|win, event| {

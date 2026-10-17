@@ -235,7 +235,7 @@ fn window_visible(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)

@@ -14,6 +14,13 @@ import {
 import { backendLabel, clock } from "./format";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
+import NetcheckPanel from "./components/NetcheckPanel.vue";
+
+const tabs = [
+  { id: "devices", label: "设备" },
+  { id: "netcheck", label: "网络体检" },
+] as const;
+const tab = ref<(typeof tabs)[number]["id"]>("devices");
 
 const snapshot = ref<Snapshot | null>(null);
 const busy = ref(false);
@@ -125,7 +132,7 @@ onUnmounted(() => {
         更新于 {{ clock(snapshot.updatedAtMs) }}
       </span>
       <button
-        v-if="overview"
+        v-if="overview && tab === 'devices'"
         class="inline-flex items-center gap-1.5 rounded-ctl border border-line px-3 py-1 text-sm hover:bg-subtle disabled:opacity-60"
         :disabled="testingAll || testablePeers.length === 0"
         title="测试所有在线设备的实际路径和延迟"
@@ -146,7 +153,26 @@ onUnmounted(() => {
       </button>
     </header>
 
-    <main class="flex-1 overflow-y-auto px-6 py-5">
+    <!-- 标签页 -->
+    <nav class="flex gap-1 border-b border-line bg-surface px-4">
+      <button
+        v-for="t in tabs"
+        :key="t.id"
+        class="relative px-3 py-2 text-sm"
+        :class="tab === t.id ? 'font-medium text-fg' : 'text-muted hover:text-fg'"
+        @click="tab = t.id"
+      >
+        {{ t.label }}
+        <span v-if="tab === t.id" class="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-accent" />
+      </button>
+    </nav>
+
+    <!-- 网络体检（与组网状态无关，出错时也能用） -->
+    <main v-show="tab === 'netcheck'" class="flex-1 overflow-y-auto px-6 py-5">
+      <NetcheckPanel />
+    </main>
+
+    <main v-show="tab === 'devices'" class="flex-1 overflow-y-auto px-6 py-5">
       <!-- 加载中 -->
       <div v-if="!snapshot" class="flex h-full items-center justify-center gap-2 text-muted">
         <LoaderCircle class="size-5 animate-spin" />

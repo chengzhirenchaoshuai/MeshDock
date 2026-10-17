@@ -80,3 +80,31 @@ export interface PingRecord {
   error: CliError | null;
   atMs: number;
 }
+
+export type Level = "good" | "warn" | "bad" | "info";
+
+export interface Finding {
+  level: Level;
+  text: string;
+}
+
+export interface RegionLatency {
+  id: string;
+  name: string;
+  ms: number;
+  preferred: boolean;
+  selfHosted: boolean;
+}
+
+/** 本机网络体检报告 */
+export interface NetcheckReport {
+  findings: Finding[];
+  globalV4: string | null;
+  globalV6: string | null;
+  portMapping: string[];
+  /** 按延迟从低到高 */
+  regions: RegionLatency[];
+  atMs: number;
+}
+
+export const runNetcheck = () => invoke<NetcheckReport>("run_netcheck");

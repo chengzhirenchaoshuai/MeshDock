@@ -86,7 +86,6 @@ impl Regions {
     }
 
     /// 按区域编号取名称（netcheck 的延迟表用编号）
-    #[allow(dead_code)] // M5 本机网络体检用
     pub fn name_by_id(&self, id: &str) -> String {
         self.by_id
             .get(id)
