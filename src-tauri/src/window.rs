@@ -1,6 +1,7 @@
 //! 主窗口：按需创建；关闭后先隐藏，一段时间内未再打开则销毁窗口和 WebView 以释放内存
 use crate::monitor::Monitor;
 use crate::paths::AppPaths;
+use crate::settings::SettingsStore;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -40,9 +41,12 @@ fn create(app: &AppHandle) -> Result<(), String> {
         .find(|w| w.label == MAIN)
         .cloned()
         .ok_or("缺少主窗口配置")?;
+    // 外观按设置；跟随系统时为 None
+    let theme = app.state::<SettingsStore>().get().theme.window_theme();
     let mut builder = WebviewWindowBuilder::from_config(app, &config)
         .map_err(|e| e.to_string())?
-        .visible(true);
+        .visible(true)
+        .theme(theme);
     // 便携模式：WebView 缓存也放在程序旁的 data 目录
     if let Some(dir) = &app.state::<AppPaths>().webview_dir {
         builder = builder.data_directory(dir.clone());

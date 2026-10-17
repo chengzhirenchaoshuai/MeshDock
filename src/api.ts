@@ -117,10 +117,28 @@ export interface NetcheckReport {
 
 export const runNetcheck = () => invoke<NetcheckReport>("run_netcheck");
 
+export type ThemeMode = "system" | "light" | "dark";
+
 export interface Settings {
   /** 手动标记的“我在家”：true 在家，false 在外，null 没标记过 */
   atHome: boolean | null;
+  theme: ThemeMode;
+  launchOnBoot: boolean;
 }
+
+/** 保存全部设置并立即生效（主题、开机自启） */
+export const saveSettings = (settings: Settings) => invoke<Settings>("save_settings", { settings });
+
+export interface AppInfo {
+  version: string;
+  settingsFile: string;
+  /** 便携模式（程序旁有 data 目录） */
+  portable: boolean;
+  /** 开发版：开机自启不会真正写入 */
+  debug: boolean;
+}
+
+export const getAppInfo = () => invoke<AppInfo>("get_app_info");
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const setAtHome = (atHome: boolean | null) => invoke<Settings>("set_at_home", { atHome });

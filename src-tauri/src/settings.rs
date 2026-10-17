@@ -8,6 +8,30 @@ use std::sync::Mutex;
 pub struct Settings {
     /// 用户手动标记“我现在在家”：true 在家，false 在外，None 没标记过（P1 改为自动识别网关）
     pub at_home: Option<bool>,
+    /// 外观：跟随系统 / 浅色 / 深色
+    pub theme: ThemeMode,
+    /// 开机自启，默认关闭
+    pub launch_on_boot: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    /// 对应的窗口主题；跟随系统时返回 None，由系统决定（网页的 prefers-color-scheme 也随之变化）
+    pub fn window_theme(self) -> Option<tauri::Theme> {
+        match self {
+            Self::System => None,
+            Self::Light => Some(tauri::Theme::Light),
+            Self::Dark => Some(tauri::Theme::Dark),
+        }
+    }
 }
 
 pub struct SettingsStore {
@@ -57,6 +81,16 @@ mod tests {
         store.update(|s| s.at_home = Some(true)).unwrap();
         assert_eq!(SettingsStore::load(path.clone()).get().at_home, Some(true));
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn 旧版设置文件缺少新字段时取默认值() {
+        let s: Settings = serde_json::from_str(r#"{ "atHome": true }"#).unwrap();
+        assert_eq!(s.at_home, Some(true));
+        assert_eq!(s.theme, ThemeMode::System);
+        assert!(!s.launch_on_boot);
+        let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
+        assert_eq!(s.theme, ThemeMode::Dark);
     }
 
     #[test]

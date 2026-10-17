@@ -8,6 +8,7 @@ import {
   onSnapshot,
   ping,
   refresh,
+  saveSettings,
   setAcceptRoutes,
   setAtHome,
   takeModeRequest,
@@ -23,10 +24,12 @@ import ErrorView from "./components/ErrorView.vue";
 import ModeConfirm from "./components/ModeConfirm.vue";
 import ModePanel from "./components/ModePanel.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
 
 const tabs = [
   { id: "devices", label: "设备" },
   { id: "netcheck", label: "网络体检" },
+  { id: "settings", label: "设置" },
 ] as const;
 const tab = ref<(typeof tabs)[number]["id"]>("devices");
 
@@ -142,6 +145,14 @@ async function updateAtHome(atHome: true | null) {
   }
 }
 
+async function updateSettings(next: Settings) {
+  try {
+    settings.value = await saveSettings(next);
+  } catch (e) {
+    showToast(`保存失败：${String(e)}`);
+  }
+}
+
 /** 托盘点了模式菜单：切到设备页并弹出确认框 */
 async function takeTrayRequest() {
   const on = await takeModeRequest();
@@ -229,6 +240,10 @@ onUnmounted(() => {
     <!-- 网络体检（与组网状态无关，出错时也能用） -->
     <main v-show="tab === 'netcheck'" class="flex-1 overflow-y-auto px-6 py-5">
       <NetcheckPanel />
+    </main>
+
+    <main v-show="tab === 'settings'" class="flex-1 overflow-y-auto px-6 py-5">
+      <SettingsPanel :settings="settings" @save="updateSettings" />
     </main>
 
     <main v-show="tab === 'devices'" class="flex-1 overflow-y-auto px-6 py-5">
