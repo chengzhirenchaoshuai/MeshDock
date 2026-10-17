@@ -81,6 +81,15 @@ pub struct Input<'a> {
     pub raw_netcheck: String,
 }
 
+fn level_text(level: netcheck::Level) -> &'static str {
+    match level {
+        netcheck::Level::Good => "正常",
+        netcheck::Level::Warn => "注意",
+        netcheck::Level::Bad => "问题",
+        netcheck::Level::Info => "说明",
+    }
+}
+
 /// 拼出报告全文并打码
 pub fn compose(input: &Input) -> String {
     let mut t = String::new();
@@ -162,6 +171,32 @@ pub fn compose(input: &Input) -> String {
                     d.conn.label
                 ));
             }
+            for r in &o.routers {
+                line(String::new());
+                line(format!(
+                    "## 子网路由器：{}（{}）",
+                    r.name,
+                    r.routes.join("、")
+                ));
+                for f in &r.findings {
+                    line(format!("- [{}] {}", level_text(f.level), f.text));
+                }
+                if let Some(ms) = r.relay_ms {
+                    line(format!("- 到广州中继 {ms:.0} ms"));
+                }
+                let model = [
+                    r.device_model.as_deref(),
+                    r.os_version.as_deref(),
+                    r.version.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("，");
+                if !model.is_empty() {
+                    line(format!("- 设备：{model}"));
+                }
+            }
         }
         None => line(format!(
             "读取组网状态失败：{}",
@@ -174,13 +209,7 @@ pub fn compose(input: &Input) -> String {
     match input.netcheck {
         Some(r) => {
             for f in &r.findings {
-                let level = match f.level {
-                    netcheck::Level::Good => "正常",
-                    netcheck::Level::Warn => "注意",
-                    netcheck::Level::Bad => "问题",
-                    netcheck::Level::Info => "说明",
-                };
-                line(format!("- [{level}] {}", f.text));
+                line(format!("- [{}] {}", level_text(f.level), f.text));
             }
         }
         None => line("体检失败，见下方原始输出".into()),

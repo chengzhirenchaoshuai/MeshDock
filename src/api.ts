@@ -62,6 +62,8 @@ export interface Overview {
   location: Location;
   /** 本机是否装了 RustDesk */
   rustdesk: boolean;
+  /** 子网路由器的健康状态 */
+  routers: RouterHealth[];
 }
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
@@ -190,3 +192,19 @@ export const onHistory = (cb: (h: History) => void): Promise<UnlistenFn> =>
 export const buildReport = () => invoke<string>("build_report");
 /** 保存到“下载”文件夹并在资源管理器中选中，返回文件路径 */
 export const saveReport = (text: string) => invoke<string>("save_report", { text });
+
+/** 子网路由器（如手机 phone-router）的健康状态 */
+export interface RouterHealth {
+  name: string;
+  online: boolean;
+  routes: string[];
+  /** 最严重的结论级别 */
+  level: Level;
+  findings: Finding[];
+  /** 到广州中继的延迟（毫秒） */
+  relayMs: number | null;
+  version: string | null;
+  osVersion: string | null;
+  deviceModel: string | null;
+  lastSeenMs: number | null;
+}

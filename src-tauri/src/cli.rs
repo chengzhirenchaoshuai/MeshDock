@@ -261,7 +261,7 @@ mod tests {
         assert!(d.regions.is_some());
         let m = netmap().await.unwrap();
         assert!(m.self_net_info().is_some());
-        assert!(!m.peer_net_info().is_empty());
+        assert!(!m.peer_hostinfo().is_empty());
     }
 
     #[tokio::test]

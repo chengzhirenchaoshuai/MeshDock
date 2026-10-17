@@ -10,6 +10,7 @@ mod netcheck;
 mod notify;
 mod paths;
 mod report;
+mod router;
 mod settings;
 mod tray;
 mod window;

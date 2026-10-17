@@ -27,6 +27,7 @@ import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
 import ModeConfirm from "./components/ModeConfirm.vue";
 import ModePanel from "./components/ModePanel.vue";
+import RouterPanel from "./components/RouterPanel.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 
@@ -280,6 +281,8 @@ onUnmounted(() => {
           @fix-home="switchMode(false, false)"
           @set-at-home="updateAtHome"
         />
+
+        <RouterPanel v-for="r in overview.routers" :key="r.name" class="mb-6" :router="r" :now="now" />
 
         <!-- 本机 -->
         <section v-if="overview.selfDevice" class="mb-6">

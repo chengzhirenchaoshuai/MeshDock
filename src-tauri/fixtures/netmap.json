@@ -3,11 +3,16 @@
 		"ComputedName": "lan-desktop",
 		"Key": "nodekey:ca71619149f13167c3d336c4d910bd24a4fc5de047c423a96164c1801a4b4515",
 		"Hostinfo": {
+			"IPNVersion": "1.102.4-t3caf7d9e7-g084ee3b64",
+			"OSVersion": "10.0.19045.6456",
 			"NetInfo": {
 				"WorkingIPv6": true,
 				"WorkingUDP": true,
 				"MappingVariesByDestIP": false,
-				"OSHasIPv6": true
+				"OSHasIPv6": true,
+				"DERPLatency": {
+					"999-v4": 0.0184242
+				}
 			}
 		}
 	},
@@ -16,11 +21,17 @@
 			"ComputedName": "phone-router",
 			"Key": "nodekey:5bb40c1ea2787efa6e6f426de90f953e5ee2014ef0eb572122efc26376b2a073",
 			"Hostinfo": {
+				"IPNVersion": "1.102.4-t3caf7d9e7-g084ee3b64",
+				"OSVersion": "4.19.157-perf-g9b2f9be4d7a8",
+				"DeviceModel": "Qualcomm Technologies, Inc. xiaomi lmi",
 				"NetInfo": {
 					"WorkingIPv6": true,
 					"WorkingUDP": true,
 					"MappingVariesByDestIP": true,
-					"OSHasIPv6": true
+					"OSHasIPv6": true,
+					"DERPLatency": {
+						"999-v4": 0.019105625
+					}
 				}
 			}
 		},
@@ -28,11 +39,16 @@
 			"ComputedName": "ming-pc",
 			"Key": "nodekey:f591affd81c3aa846ace1abf7520da69afaef60de93ad011ccf22ced0d3a5b5d",
 			"Hostinfo": {
+				"IPNVersion": "1.102.4-t3caf7d9e7-g084ee3b64",
+				"OSVersion": "10.0.19045.6456",
 				"NetInfo": {
 					"WorkingIPv6": true,
 					"WorkingUDP": true,
 					"MappingVariesByDestIP": false,
-					"OSHasIPv6": true
+					"OSHasIPv6": true,
+					"DERPLatency": {
+						"999-v4": 0.0077819
+					}
 				}
 			}
 		},
@@ -40,11 +56,16 @@
 			"ComputedName": "peng-work",
 			"Key": "nodekey:bc139074cba919a9b11fa5a39fae27e022c64d94760f90a28edf424c0f18835d",
 			"Hostinfo": {
+				"IPNVersion": "1.102.4-t3caf7d9e7-g084ee3b64",
+				"OSVersion": "10.0.19045.7725",
 				"NetInfo": {
 					"WorkingIPv6": false,
 					"WorkingUDP": true,
 					"MappingVariesByDestIP": true,
-					"OSHasIPv6": true
+					"OSHasIPv6": true,
+					"DERPLatency": {
+						"999-v4": 0.0918892
+					}
 				}
 			}
 		}

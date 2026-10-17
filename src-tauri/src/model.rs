@@ -127,10 +127,16 @@ pub struct NetMapNode {
     pub hostinfo: Option<Hostinfo>,
 }
 
-#[derive(Deserialize, Default, Debug)]
+#[derive(Deserialize, Default, Debug, Clone)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct Hostinfo {
     pub net_info: Option<NetInfo>,
+    /// Tailscale 版本，如 1.102.4-t3caf7d9e7-g084ee3b64
+    #[serde(rename = "IPNVersion")]
+    pub ipn_version: Option<String>,
+    #[serde(rename = "OSVersion")]
+    pub os_version: Option<String>,
+    pub device_model: Option<String>,
 }
 
 /// 设备自己网络检查的结论（各设备定期上报给控制端）
@@ -144,6 +150,21 @@ pub struct NetInfo {
     /// true 表示 IPv4 是对称型 NAT
     #[serde(rename = "MappingVariesByDestIP")]
     pub mapping_varies_by_dest_ip: Option<bool>,
+    /// 中继区域延迟（秒），键如 "999-v4"、"999-v6"
+    #[serde(rename = "DERPLatency")]
+    pub derp_latency: Option<HashMap<String, f64>>,
+}
+
+impl NetInfo {
+    /// 到某个中继区域的延迟（毫秒），IPv4 / IPv6 取较小值
+    pub fn region_latency_ms(&self, region_id: &str) -> Option<f64> {
+        let map = self.derp_latency.as_ref()?;
+        ["v4", "v6"]
+            .iter()
+            .filter_map(|f| map.get(&format!("{region_id}-{f}")))
+            .map(|s| s * 1000.0)
+            .reduce(f64::min)
+    }
 }
 
 impl NetMapNode {
@@ -157,12 +178,12 @@ impl NetMap {
         self.self_node.as_ref()?.net_info()
     }
 
-    /// 节点公钥 → 网络检查结论
-    pub fn peer_net_info(&self) -> HashMap<String, NetInfo> {
+    /// 节点公钥 → 设备上报的主机信息（版本、型号、网络检查结论）
+    pub fn peer_hostinfo(&self) -> HashMap<String, Hostinfo> {
         self.peers
             .iter()
             .flatten()
-            .filter_map(|p| Some((p.key.clone()?, p.net_info()?)))
+            .filter_map(|p| Some((p.key.clone()?, p.hostinfo.clone()?)))
             .collect()
     }
 }
@@ -261,7 +282,11 @@ mod tests {
             .into_iter()
             .find(|p| p.host_name.as_deref() == Some("work-laptop"))
             .unwrap();
-        let info = &n.peer_net_info()[laptop.public_key.as_ref().unwrap()];
+        let hostinfo = n.peer_hostinfo();
+        let info = hostinfo[laptop.public_key.as_ref().unwrap()]
+            .net_info
+            .as_ref()
+            .unwrap();
         assert_eq!(info.working_ipv6, Some(false));
         assert_eq!(info.mapping_varies_by_dest_ip, Some(true));
     }

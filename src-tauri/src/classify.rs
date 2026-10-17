@@ -596,10 +596,10 @@ mod tests {
             .into_iter()
             .find(|p| p.host_name.as_deref() == Some("work-laptop"))
             .unwrap();
-        let peers = n.peer_net_info();
+        let peers = n.peer_hostinfo();
         let reason = relay_reason(
             n.self_net_info().as_ref(),
-            peers.get(laptop.public_key.as_ref().unwrap()),
+            peers[laptop.public_key.as_ref().unwrap()].net_info.as_ref(),
         );
         assert_eq!(
             reason.as_deref(),
@@ -623,6 +623,7 @@ mod tests {
             working_ipv6: Some(true),
             working_udp: Some(true),
             mapping_varies_by_dest_ip: Some(false),
+            ..Default::default()
         };
         assert_eq!(relay_reason(Some(&ok), Some(&ok)), None);
         assert_eq!(relay_reason(None, None), None);

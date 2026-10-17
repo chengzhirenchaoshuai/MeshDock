@@ -4,8 +4,9 @@ use crate::cli::{self, CliError};
 use crate::gateway;
 use crate::history::{HistoryStore, Sample};
 use crate::launch;
-use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
+use crate::model::{Hostinfo, NetInfo, PeerStatus, Status, non_empty, time_ms};
 use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
+use crate::router::{self, RouterHealth};
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
 use serde::Serialize;
@@ -63,6 +64,8 @@ pub struct Overview {
     pub location: Location,
     /// 本机是否装了 RustDesk（决定是否显示 RustDesk 按钮）
     pub rustdesk: bool,
+    /// 子网路由器的健康状态
+    pub routers: Vec<RouterHealth>,
 }
 
 /// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记
@@ -148,7 +151,8 @@ struct Inner {
 #[derive(Default)]
 struct NetInfos {
     me: Option<NetInfo>,
-    peers: HashMap<String, NetInfo>,
+    /// 节点公钥 → 设备上报的主机信息
+    peers: HashMap<String, Hostinfo>,
 }
 
 /// netmap 缓存多久，避免每次刷新都读取（约 34 KB）
@@ -285,7 +289,7 @@ impl Monitor {
             Ok(map) => {
                 let infos = Arc::new(NetInfos {
                     me: map.self_net_info(),
-                    peers: map.peer_net_info(),
+                    peers: map.peer_hostinfo(),
                 });
                 *self.inner.net_infos.lock().unwrap() = Some((Instant::now(), infos.clone()));
                 Some(infos)
@@ -294,19 +298,41 @@ impl Monitor {
         }
     }
 
-    /// 给走中继的设备补上可能的原因；没有设备走中继时不读取 netmap
-    async fn explain_relays(&self, peers: &mut [Device]) {
-        if !peers.iter().any(|d| d.conn.kind == ConnKind::Relay) {
+    /// 用 netmap 补充信息：给走中继的设备补上可能的原因，生成子网路由器的健康状态。
+    /// 既没有设备走中继、也没有子网路由器时不读取 netmap
+    async fn enrich(&self, overview: &mut Overview) {
+        let has_relay = overview
+            .peers
+            .iter()
+            .any(|d| d.conn.kind == ConnKind::Relay);
+        if !has_relay && overview.subnet_routes.is_empty() {
             return;
         }
-        let Some(infos) = self.net_infos().await else {
-            return;
+        let infos = self.net_infos().await;
+        let hostinfo = |key: &Option<String>| {
+            let infos = infos.as_ref()?;
+            infos.peers.get(key.as_ref()?)
         };
-        for d in peers.iter_mut() {
-            let peer = d.key.as_ref().and_then(|k| infos.peers.get(k));
-            let reason = classify::relay_reason(infos.me.as_ref(), peer);
+        for d in overview.peers.iter_mut() {
+            let peer = hostinfo(&d.key).and_then(|h| h.net_info.as_ref());
+            let me = infos.as_ref().and_then(|i| i.me.as_ref());
+            let reason = classify::relay_reason(me, peer);
             d.conn = classify::with_relay_reason(d.conn.clone(), reason);
         }
+        overview.routers = overview
+            .subnet_routes
+            .iter()
+            .map(|r| {
+                let device = overview.peers.iter().find(|d| d.name == r.device);
+                router::health(
+                    &r.device,
+                    device.is_some_and(|d| d.conn.kind != ConnKind::Offline),
+                    r.routes.clone(),
+                    device.and_then(|d| d.last_seen_ms),
+                    device.and_then(|d| hostinfo(&d.key)),
+                )
+            })
+            .collect();
     }
 
     /// 按组网 IP 在最近的快照里找到设备 id
@@ -334,7 +360,10 @@ impl Monitor {
         let Some(infos) = self.net_infos().await else {
             return conn;
         };
-        let peer = key.as_ref().and_then(|k| infos.peers.get(k));
+        let peer = key
+            .as_ref()
+            .and_then(|k| infos.peers.get(k))
+            .and_then(|h| h.net_info.as_ref());
         classify::with_relay_reason(conn, classify::relay_reason(infos.me.as_ref(), peer))
     }
 
@@ -383,7 +412,7 @@ impl Monitor {
         let snapshot = match status {
             Ok(status) => {
                 let mut overview = self.overview(&status, &regions, accept_routes);
-                self.explain_relays(&mut overview.peers).await;
+                self.enrich(&mut overview).await;
                 let settings = app.state::<SettingsStore>().get();
                 overview.location = locate(&settings);
                 self.notify_changes(app, &overview, settings.notify);
@@ -472,6 +501,7 @@ impl Monitor {
             subnet_routes,
             location: Location::default(),
             rustdesk: launch::rustdesk_installed(),
+            routers: Vec::new(),
         }
     }
 
