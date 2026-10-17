@@ -87,7 +87,7 @@ pub async fn set_accept_routes(
         return Err(e);
     }
     applog::info(format!("已执行切换到{mode}"));
-    let snapshot = monitor.refresh(&app).await;
+    let snapshot = monitor.refresh_reread(&app).await;
     let actual = snapshot.overview.as_ref().and_then(|o| o.accept_routes);
     if actual != Some(on) {
         applog::error(format!("切换到{mode}后读取到 accept-routes={actual:?}"));
@@ -235,7 +235,7 @@ pub async fn connect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<Snap
         .await
         .inspect_err(|e| applog::error(format!("连接组网失败：{}\n{}", e.message, e.raw)))?;
     applog::info("已连接组网");
-    Ok(monitor.refresh(&app).await)
+    Ok(monitor.refresh_reread(&app).await)
 }
 
 /// 断开组网（tailscale down），返回刷新后的快照。前端已做二次确认
@@ -245,5 +245,5 @@ pub async fn disconnect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<S
         .await
         .inspect_err(|e| applog::error(format!("断开组网失败：{}\n{}", e.message, e.raw)))?;
     applog::info("已断开组网");
-    Ok(monitor.refresh(&app).await)
+    Ok(monitor.refresh_reread(&app).await)
 }

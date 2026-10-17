@@ -1,6 +1,8 @@
 //! 快捷连接：SSH（按 ~/.ssh/config 的别名打开终端）和 RustDesk（用组网 IP 直连）
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 /// ~/.ssh/config 中的一条主机：别名 → HostName
 #[derive(Debug, PartialEq)]
@@ -60,15 +62,47 @@ pub fn alias_for<'a>(hosts: &'a [SshHost], candidates: &[&str]) -> Option<&'a st
         .map(|h| h.alias.as_str())
 }
 
-/// 读取当前用户的 ~/.ssh/config；没有时返回空
-pub fn load_ssh_hosts() -> Vec<SshHost> {
-    let Some(home) = std::env::var_os("USERPROFILE") else {
-        return Vec::new();
-    };
-    let path = PathBuf::from(home).join(".ssh").join("config");
-    std::fs::read_to_string(path)
+/// 当前用户的 ~/.ssh/config 路径
+fn ssh_config_path() -> Option<PathBuf> {
+    let home = std::env::var_os("USERPROFILE")?;
+    Some(PathBuf::from(home).join(".ssh").join("config"))
+}
+
+/// 读取 ssh 配置；没有时返回空
+fn read_ssh_hosts(path: Option<&Path>) -> Vec<SshHost> {
+    path.and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| parse_ssh_config(&t))
         .unwrap_or_default()
+}
+
+/// ~/.ssh/config 的解析结果，按文件修改时间缓存：文件没变就不重新读取，改了下一轮刷新即生效
+#[derive(Default)]
+pub struct SshHostsCache {
+    cached: Mutex<Option<CachedHosts>>,
+}
+
+/// (读取时文件的修改时间, 解析结果)；文件不存在时修改时间为 None
+type CachedHosts = (Option<SystemTime>, Arc<Vec<SshHost>>);
+
+impl SshHostsCache {
+    pub fn get(&self) -> Arc<Vec<SshHost>> {
+        self.get_at(ssh_config_path().as_deref())
+    }
+
+    fn get_at(&self, path: Option<&Path>) -> Arc<Vec<SshHost>> {
+        let modified = path
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok());
+        let mut cached = self.cached.lock().unwrap();
+        if let Some((at, hosts)) = &*cached
+            && *at == modified
+        {
+            return hosts.clone();
+        }
+        let hosts = Arc::new(read_ssh_hosts(path));
+        *cached = Some((modified, hosts.clone()));
+        hosts
+    }
 }
 
 /// 别名只允许常见字符，避免被终端当成命令分隔符或选项
@@ -145,6 +179,32 @@ pub fn rustdesk_url(ip: &str) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn ssh_配置没变时用缓存_改了重新读取() {
+        let dir = std::env::temp_dir().join(format!("meshdock-ssh-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config");
+        let cache = SshHostsCache::default();
+        assert!(cache.get_at(Some(&path)).is_empty()); // 文件不存在
+
+        std::fs::write(&path, "Host a\n  HostName 100.64.0.1\n").unwrap();
+        let first = cache.get_at(Some(&path));
+        assert_eq!(first[0].alias, "a");
+        assert!(Arc::ptr_eq(&first, &cache.get_at(Some(&path))));
+
+        // 显式设置修改时间，避免两次写入落在同一时间刻度内
+        std::fs::write(&path, "Host b\n  HostName 100.64.0.2\n").unwrap();
+        let later = SystemTime::now() + std::time::Duration::from_secs(10);
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert_eq!(cache.get_at(Some(&path))[0].alias, "b");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     const CONFIG: &str = "\
 # 注释
 Host gz
@@ -202,6 +262,6 @@ Host *.example.com
     #[ignore]
     fn 实机_检测_rustdesk() {
         assert!(rustdesk_installed());
-        assert!(!load_ssh_hosts().is_empty());
+        assert!(!SshHostsCache::default().get().is_empty());
     }
 }

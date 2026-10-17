@@ -150,7 +150,58 @@ struct Inner {
     /// 刷新排队执行：后台循环、手动刷新、连接 / 断开、切换模式可能同时发起刷新，
     /// 不加锁时先开始的刷新可能后结束，用旧快照覆盖新快照，通知判断也会被重复推进
     refreshing: tokio::sync::Mutex<()>,
+    /// ~/.ssh/config 的解析结果，按修改时间缓存
+    ssh_hosts: launch::SshHostsCache,
+    /// 本机是否装了 RustDesk
+    rustdesk: Ttl<bool>,
+    /// 本机 accept-routes 的实际值（只缓存读取成功的结果）
+    accept_routes: Ttl<Option<bool>>,
 }
+
+/// 带有效期的缓存值
+struct Ttl<T> {
+    ttl: Duration,
+    value: Mutex<Option<(Instant, T)>>,
+}
+
+impl<T: Clone> Ttl<T> {
+    fn new(ttl: Duration) -> Self {
+        Self {
+            ttl,
+            value: Mutex::new(None),
+        }
+    }
+
+    /// 未过期时返回缓存值
+    fn get(&self) -> Option<T> {
+        let value = self.value.lock().unwrap();
+        let (at, v) = value.as_ref()?;
+        (at.elapsed() < self.ttl).then(|| v.clone())
+    }
+
+    fn set(&self, v: T) {
+        *self.value.lock().unwrap() = Some((Instant::now(), v));
+    }
+
+    fn clear(&self) {
+        *self.value.lock().unwrap() = None;
+    }
+
+    /// 未过期时用缓存，否则重新计算并缓存
+    fn get_or(&self, f: impl FnOnce() -> T) -> T {
+        self.get().unwrap_or_else(|| {
+            let v = f();
+            self.set(v.clone());
+            v
+        })
+    }
+}
+
+/// RustDesk 是否安装，多久重新检测一次
+const RUSTDESK_TTL: Duration = Duration::from_secs(60);
+/// accept-routes 多久重新读取一次。窗口可见时（10 秒一轮）每 3 轮读一次；
+/// 本程序切换模式、连接、断开后立即重新读取
+const PREFS_TTL: Duration = Duration::from_secs(30);
 
 /// netmap 中的网络检查结论：本机的，以及按节点公钥索引的各设备的
 #[derive(Default)]
@@ -180,6 +231,9 @@ impl Monitor {
                 mismatch: Mutex::new(MismatchWatcher::default()),
                 wake: Notify::new(),
                 refreshing: tokio::sync::Mutex::new(()),
+                ssh_hosts: launch::SshHostsCache::default(),
+                rustdesk: Ttl::new(RUSTDESK_TTL),
+                accept_routes: Ttl::new(PREFS_TTL),
             }),
         }
     }
@@ -426,13 +480,46 @@ impl Monitor {
         }
     }
 
+    /// accept-routes 的实际值：缓存未过期时直接用，否则读取 debug prefs；读取失败不缓存
+    async fn read_accept_routes(&self) -> Option<bool> {
+        if let Some(v) = self.inner.accept_routes.get() {
+            return v;
+        }
+        let v = cli::prefs().await.ok()?.route_all;
+        self.inner.accept_routes.set(v);
+        v
+    }
+
+    fn invalidate_prefs(&self) {
+        self.inner.accept_routes.clear();
+    }
+
     /// 读取一次状态，保存快照、推给前端、更新托盘
     pub async fn refresh(&self, app: &AppHandle) -> Snapshot {
+        self.refresh_with(app, false).await
+    }
+
+    /// 不用缓存、重新读取 accept-routes 后刷新（切换模式、连接、断开后调用）
+    pub async fn refresh_reread(&self, app: &AppHandle) -> Snapshot {
+        self.refresh_with(app, true).await
+    }
+
+    async fn refresh_with(&self, app: &AppHandle, reread_prefs: bool) -> Snapshot {
         let _guard = self.inner.refreshing.lock().await;
+        // 必须在拿到锁之后再作废：否则正在进行的刷新可能把切换前读到的旧值写回缓存
+        if reread_prefs {
+            self.invalidate_prefs();
+        }
         let regions = self.regions().await;
         // 状态和设置同时读取；设置读不到不影响设备列表
-        let (status, prefs) = tokio::join!(cli::status(), cli::prefs());
-        let accept_routes = prefs.ok().and_then(|p| p.route_all);
+        let (status, accept_routes) = tokio::join!(cli::status(), self.read_accept_routes());
+        // 状态读不到（如服务没运行）时不沿用缓存的模式，托盘也不勾选
+        let accept_routes = if status.is_ok() {
+            accept_routes
+        } else {
+            self.invalidate_prefs();
+            None
+        };
         let snapshot = match status {
             Ok(status) => {
                 let mut overview = self.overview(&status, &regions, accept_routes);
@@ -500,7 +587,7 @@ impl Monitor {
             })
             .collect::<Vec<_>>();
         // SSH 别名：按组网 IP、名称或 MagicDNS 名对应 ~/.ssh/config 中的 HostName
-        let ssh_hosts = launch::load_ssh_hosts();
+        let ssh_hosts = self.inner.ssh_hosts.get();
         let peers = peers
             .into_iter()
             .map(|mut d| {
@@ -525,7 +612,7 @@ impl Monitor {
             accept_routes,
             subnet_routes,
             location: Location::default(),
-            rustdesk: launch::rustdesk_installed(),
+            rustdesk: self.inner.rustdesk.get_or(launch::rustdesk_installed),
             routers: Vec::new(),
         }
     }
@@ -602,4 +689,30 @@ pub fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 缓存未过期时不重新计算_作废后重新计算() {
+        let cache = Ttl::new(Duration::from_secs(60));
+        let mut calls = 0;
+        assert!(cache.get_or(|| {
+            calls += 1;
+            true
+        }));
+        assert!(cache.get_or(|| {
+            calls += 1;
+            false
+        }));
+        assert_eq!(calls, 1);
+        cache.clear();
+        assert_eq!(cache.get(), None);
+        // 有效期为 0 时总是过期
+        let expired = Ttl::new(Duration::ZERO);
+        expired.set(Some(true));
+        assert_eq!(expired.get(), None);
+    }
 }
