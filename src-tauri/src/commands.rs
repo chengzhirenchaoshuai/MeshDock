@@ -120,3 +120,19 @@ pub fn get_app_info(app: AppHandle, paths: State<'_, AppPaths>) -> AppInfo {
         debug: cfg!(debug_assertions),
     }
 }
+
+/// 在新终端中执行 `ssh <别名>`
+#[tauri::command]
+pub fn open_ssh(alias: String) -> Result<(), String> {
+    crate::launch::open_ssh(&alias)
+}
+
+/// 用 RustDesk 直连设备的组网 IP（对方需在 RustDesk 中允许 IP 直接访问）
+#[tauri::command]
+pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let url = crate::launch::rustdesk_url(&ip)?;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("打开 RustDesk 失败：{e}"))
+}

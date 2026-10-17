@@ -11,7 +11,7 @@ const PING_OVERRIDE_MS = 30_000;
 
 /**
  * note：替代流量显示的说明文字（本机卡片用来显示客户端版本）
- * ping：最近一次测试结果；testing：正在测试
+ * ping：最近一次测试结果；testing：正在测试；rustdesk：本机是否装了 RustDesk
  */
 const props = defineProps<{
   device: Device;
@@ -19,8 +19,9 @@ const props = defineProps<{
   note?: string;
   ping?: PingRecord;
   testing?: boolean;
+  rustdesk?: boolean;
 }>();
-const emit = defineEmits<{ copy: [ip: string]; test: [] }>();
+const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string] }>();
 
 const offline = computed(() => props.device.conn.kind === "offline");
 const isSelf = computed(() => props.device.conn.kind === "self-node");
@@ -100,6 +101,24 @@ const timeLine = computed(() => {
       >
         {{ testing ? "正在测试…" : pingLine.text }}
       </span>
+      <button
+        v-if="device.sshAlias"
+        class="shrink-0 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="offline"
+        :title="offline ? '设备离线' : `在新终端中执行 ssh ${device.sshAlias}`"
+        @click="emit('ssh', device.sshAlias)"
+      >
+        SSH
+      </button>
+      <button
+        v-if="rustdesk && ip"
+        class="shrink-0 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="offline"
+        :title="offline ? '设备离线' : `用 RustDesk 直连 ${ip}（对方需在 RustDesk 中允许 IP 直接访问）`"
+        @click="emit('rustdesk', ip)"
+      >
+        RustDesk
+      </button>
       <button
         class="inline-flex shrink-0 items-center gap-1 rounded-ctl border border-line px-2.5 py-0.5 hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
         :disabled="testing || offline"

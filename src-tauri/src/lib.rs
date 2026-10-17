@@ -2,6 +2,7 @@ mod classify;
 mod cli;
 mod commands;
 mod gateway;
+mod launch;
 mod model;
 mod monitor;
 mod netcheck;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::set_accept_routes,
             commands::save_settings,
             commands::get_app_info,
+            commands::open_ssh,
+            commands::open_rustdesk,
         ])
         // 点击关闭按钮时只隐藏到托盘，真正退出走托盘菜单
         .on_window_event(|win, event| {

@@ -6,6 +6,8 @@ import {
   getSnapshot,
   onModeRequest,
   onSnapshot,
+  openRustdesk,
+  openSsh,
   ping,
   refresh,
   saveSettings,
@@ -133,6 +135,15 @@ async function switchMode(on: boolean, fromDialog: boolean) {
     else showToast(`切换失败：${(e as CliError).message}`);
   } finally {
     modeBusy.value = false;
+  }
+}
+
+/** 快捷连接（SSH / RustDesk），失败时提示原因 */
+async function launch(open: (arg: string) => Promise<void>, arg: string) {
+  try {
+    await open(arg);
+  } catch (e) {
+    showToast(`打开失败：${String(e)}`);
   }
 }
 
@@ -291,7 +302,10 @@ onUnmounted(() => {
               :ping="pings[d.id]"
               :testing="testing.has(d.id)"
               @copy="copyIp"
+              :rustdesk="overview.rustdesk"
               @test="testOne(d)"
+              @ssh="launch(openSsh, $event)"
+              @rustdesk="launch(openRustdesk, $event)"
             />
           </div>
         </section>

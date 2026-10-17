@@ -2,6 +2,7 @@
 use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli::{self, CliError};
 use crate::gateway;
+use crate::launch;
 use crate::model::{NetInfo, PeerStatus, Status, non_empty, time_ms};
 use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
 use crate::settings::{Settings, SettingsStore};
@@ -40,6 +41,8 @@ pub struct Device {
     /// 节点公钥，只在后端用来对应 netmap，不发给前端
     #[serde(skip)]
     pub key: Option<String>,
+    /// ~/.ssh/config 中对应这台设备的别名，没有则不显示 SSH 按钮
+    pub ssh_alias: Option<String>,
 }
 
 /// 组网整体情况
@@ -57,6 +60,8 @@ pub struct Overview {
     pub subnet_routes: Vec<SubnetRoute>,
     /// 本机在不在家
     pub location: Location,
+    /// 本机是否装了 RustDesk（决定是否显示 RustDesk 按钮）
+    pub rustdesk: bool,
 }
 
 /// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记
@@ -368,6 +373,20 @@ impl Monitor {
                         .map(Instant::elapsed);
                 device(p, classify::classify(p, active_for, regions, &local))
             })
+            .collect::<Vec<_>>();
+        // SSH 别名：按组网 IP、名称或 MagicDNS 名对应 ~/.ssh/config 中的 HostName
+        let ssh_hosts = launch::load_ssh_hosts();
+        let peers = peers
+            .into_iter()
+            .map(|mut d| {
+                let mut candidates: Vec<&str> = d.ips.iter().map(String::as_str).collect();
+                candidates.push(&d.name);
+                if let Some(dns) = &d.dns_name {
+                    candidates.push(dns);
+                }
+                d.ssh_alias = launch::alias_for(&ssh_hosts, &candidates).map(str::to_string);
+                d
+            })
             .collect();
         Overview {
             backend_state: status.backend_state.clone(),
@@ -381,6 +400,7 @@ impl Monitor {
             accept_routes,
             subnet_routes,
             location: Location::default(),
+            rustdesk: launch::rustdesk_installed(),
         }
     }
 
@@ -419,6 +439,7 @@ fn device(p: &PeerStatus, conn: Conn) -> Device {
         last_seen_ms: time_ms(p.last_seen.as_deref()),
         last_handshake_ms: time_ms(p.last_handshake.as_deref()),
         key: p.public_key.clone(),
+        ssh_alias: None,
     }
 }
 

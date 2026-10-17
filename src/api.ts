@@ -32,6 +32,8 @@ export interface Device {
   txBytes: number | null;
   lastSeenMs: number | null;
   lastHandshakeMs: number | null;
+  /** ~/.ssh/config 中对应的别名；没有则不显示 SSH 按钮 */
+  sshAlias: string | null;
 }
 
 export interface SubnetRoute {
@@ -58,6 +60,8 @@ export interface Overview {
   acceptRoutes: boolean | null;
   subnetRoutes: SubnetRoute[];
   location: Location;
+  /** 本机是否装了 RustDesk */
+  rustdesk: boolean;
 }
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
@@ -162,3 +166,8 @@ export const setAcceptRoutes = (on: boolean) => invoke<Snapshot>("set_accept_rou
 /** 取走托盘发起的模式切换请求 */
 export const takeModeRequest = () => invoke<boolean | null>("take_mode_request");
 export const onModeRequest = (cb: () => void): Promise<UnlistenFn> => listen("mode-request", () => cb());
+
+/** 在新终端中执行 ssh <别名> */
+export const openSsh = (alias: string) => invoke<void>("open_ssh", { alias });
+/** 用 RustDesk 直连组网 IP */
+export const openRustdesk = (ip: string) => invoke<void>("open_rustdesk", { ip });
