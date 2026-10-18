@@ -107,7 +107,7 @@
 /*
  * ---------- 其他配色方案 ----------
  * 只换品牌色、背景色调和光晕；连接状态色（绿、橙、黄、红、灰）在所有方案中保持不变。
- * 品牌色避开绿、橙、黄、红，免得和状态色混淆。
+ * 品牌色尽量避开绿、橙、黄、红，免得和状态色混淆；“翡翠”应要求用绿色，偏向青绿，与直连的纯绿拉开。
  * 写法：先写浅色，再在深色媒体查询里写深色；选择器比 :root 更具体，会覆盖上面的“极光”。
  * 可选值与后端 settings.rs 的 PALETTE_CHOICES、前端 palette.ts 一致。
  */
@@ -145,6 +145,24 @@
   --md-grad-shadow: #c026d3;
   --md-glow-1: rgb(192 38 211 / 0.09);
   --md-glow-2: rgb(124 58 237 / 0.08);
+  --md-header: rgb(255 255 255 / 0.72);
+}
+
+/* 翡翠：绿到青绿 */
+:root[data-palette="jade"] {
+  --md-bg: #f1f8f5;
+  --md-surface: #ffffff;
+  --md-subtle: #e9f4ef;
+  --md-line: #d9ebe3;
+  --md-accent: #047857;
+  --md-accent-hover: #065f46;
+  --md-accent-fg: #ffffff;
+  --md-grad: linear-gradient(135deg, #047857 0%, #0f766e 100%);
+  --md-grad-hover: linear-gradient(135deg, #065f46 0%, #115e59 100%);
+  --md-grad-fg: #ffffff;
+  --md-grad-shadow: #047857;
+  --md-glow-1: rgb(4 120 87 / 0.09);
+  --md-glow-2: rgb(15 118 110 / 0.08);
   --md-header: rgb(255 255 255 / 0.72);
 }
 
@@ -199,6 +217,23 @@
     --md-glow-1: rgb(192 38 211 / 0.18);
     --md-glow-2: rgb(124 58 237 / 0.14);
     --md-header: rgb(15 10 26 / 0.7);
+  }
+
+  :root[data-palette="jade"] {
+    --md-bg: #06120e;
+    --md-surface: #0d1c17;
+    --md-subtle: #14281f;
+    --md-line: #1f3a2f;
+    --md-accent: #2dd4bf;
+    --md-accent-hover: #5eead4;
+    --md-accent-fg: #042f2e;
+    --md-grad: linear-gradient(135deg, #047857 0%, #0f766e 100%);
+    --md-grad-hover: linear-gradient(135deg, #05906a 0%, #128a80 100%);
+    --md-grad-fg: #ffffff;
+    --md-grad-shadow: #047857;
+    --md-glow-1: rgb(16 185 129 / 0.14);
+    --md-glow-2: rgb(20 184 166 / 0.1);
+    --md-header: rgb(6 18 14 / 0.7);
   }
 
   /* 深色下灰色渐变改浅、字改深，否则按钮和背景分不开 */

@@ -59,7 +59,7 @@ function saveGateway(value: string) {
       <div class="mt-3 border-t border-line pt-3">
         <p class="text-sm">配色方案</p>
         <p class="mt-0.5 text-xs text-muted">换的是品牌色和背景色调，浅色、深色都适用；连接状态的颜色（绿、橙、黄、红、灰）不变。</p>
-        <div class="mt-3 grid grid-cols-4 gap-3" role="radiogroup" aria-label="配色方案">
+        <div class="mt-3 grid grid-cols-5 gap-3" role="radiogroup" aria-label="配色方案">
           <button
             v-for="p in PALETTES"
             :key="p.id"

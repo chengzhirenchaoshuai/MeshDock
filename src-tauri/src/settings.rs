@@ -32,7 +32,7 @@ pub const REFRESH_CHOICES: [u64; 4] = [5, 10, 30, 60];
 /// 后台测速间隔的可选值（分钟）。最长 10 分钟：延迟小图把相隔超过 15 分钟的两次测量画成断开
 pub const SAMPLE_CHOICES: [u64; 4] = [1, 2, 5, 10];
 /// 配色方案的可选值，第一个是默认值；与前端 style.css 中的 data-palette 一致
-pub const PALETTE_CHOICES: [&str; 4] = ["aurora", "ocean", "neon", "graphite"];
+pub const PALETTE_CHOICES: [&str; 5] = ["aurora", "ocean", "neon", "jade", "graphite"];
 /// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
 const HIDDEN_MIN_SECS: u64 = 30;
 

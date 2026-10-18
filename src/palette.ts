@@ -20,6 +20,12 @@ export const PALETTES = [
     swatch: { from: "#c026d3", to: "#7c3aed", bg: "#0f0a1a", card: "#181127" },
   },
   {
+    id: "jade",
+    label: "翡翠",
+    desc: "绿到青绿，清新",
+    swatch: { from: "#047857", to: "#0f766e", bg: "#06120e", card: "#0d1c17" },
+  },
+  {
     id: "graphite",
     label: "石墨",
     desc: "中性灰，不带彩色",
