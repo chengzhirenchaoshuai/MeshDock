@@ -56,27 +56,32 @@ const options = computed(() => [
 <template>
   <UiCard title="在家 / 出门模式" :icon="Route">
     <template #actions>
-      <span class="text-xs text-muted">
+      <span class="ml-auto text-xs text-muted">
         <template v-if="mode === null">读取不到当前模式</template>
         <template v-else>子网路由 accept-routes {{ mode ? "已开启" : "已关闭" }}</template>
       </span>
       <LoaderCircle v-if="busy" class="size-4 animate-spin text-muted" />
-      <span
-        v-if="locationText"
-        class="ml-auto inline-flex min-w-0 items-center gap-1 text-xs text-muted"
-        title="按默认网关自动识别，可在“设置”中修改家里网关"
-      >
-        <MapPin class="size-3.5 shrink-0" />
-        <span class="truncate">{{ locationText }}</span>
-      </span>
-      <!-- 读不到网关时退回手动标记 -->
-      <label v-else class="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs text-muted">
-        我现在在家（读不到网关，请手动标记）
-        <UiSwitch :model-value="settings?.atHome === true" @update:model-value="emit('setAtHome', $event || null)" />
-      </label>
     </template>
 
     <div class="flex flex-col gap-3">
+      <!-- 位置识别：单独一行，文字长时自动换行 -->
+      <div
+        v-if="locationText"
+        class="flex items-start gap-2 rounded-ctl bg-subtle px-3 py-2 text-xs leading-relaxed text-muted"
+        title="按默认网关自动识别，可在“设置”中修改家里网关"
+      >
+        <MapPin class="mt-0.5 size-3.5 shrink-0 text-accent" />
+        <span class="min-w-0 break-words">{{ locationText }}</span>
+      </div>
+      <!-- 读不到网关时退回手动标记 -->
+      <label
+        v-else
+        class="flex cursor-pointer items-center gap-2 rounded-ctl bg-subtle px-3 py-2 text-xs text-muted"
+      >
+        <MapPin class="size-3.5 shrink-0 text-accent" />
+        <span class="min-w-0 flex-1">我现在在家（读不到网关，请手动标记）</span>
+        <UiSwitch :model-value="settings?.atHome === true" @update:model-value="emit('setAtHome', $event || null)" />
+      </label>
       <!-- 在家却开着出门模式：2026-09-20 踩过的坑 -->
       <UiCallout v-if="atHome === true && mode === true" tone="error">
         你在家，却开着出门模式：家里局域网的流量会绕进隧道，可能变慢甚至断网。在家应关闭子网路由。

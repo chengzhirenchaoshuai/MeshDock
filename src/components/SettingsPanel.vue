@@ -140,21 +140,19 @@ function saveGateway(value: string) {
 
     <!-- 位置识别 -->
     <UiCard title="在家识别" :icon="House">
-      <div class="flex items-center gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm">家里路由器地址</p>
-          <p class="mt-0.5 text-xs text-muted">
-            本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
-          </p>
-        </div>
-        <input
-          class="ui-input num w-44 text-sm select-text"
-          :value="settings.homeGateway"
-          @change="saveGateway(($event.target as HTMLInputElement).value)"
-          @keydown.enter="($event.target as HTMLInputElement).blur()"
-        />
-      </div>
-      <p v-if="gatewayError" class="mt-2 text-right text-xs text-error">{{ gatewayError }}</p>
+      <p class="text-sm">家里路由器地址</p>
+      <p class="mt-0.5 text-xs text-muted">
+        本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
+      </p>
+      <!-- 输入框单独一行 -->
+      <input
+        class="ui-input num mt-2.5 block w-56 text-sm select-text"
+        :value="settings.homeGateway"
+        placeholder="例如 192.168.66.66"
+        @change="saveGateway(($event.target as HTMLInputElement).value)"
+        @keydown.enter="($event.target as HTMLInputElement).blur()"
+      />
+      <p v-if="gatewayError" class="mt-2 text-xs text-error">{{ gatewayError }}</p>
       <p v-if="gateways.length" class="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs text-muted">
         当前默认网关：
         <button
