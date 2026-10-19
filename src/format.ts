@@ -14,6 +14,23 @@ export function formatBytes(n: number | null): string {
   return `${v < 10 && i > 0 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
+/** 运行秒数 → “27 天 9 小时” / “5 小时 3 分” / “12 分钟” */
+export function formatUptime(secs: number): string {
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (d > 0) return h > 0 ? `${d} 天 ${h} 小时` : `${d} 天`;
+  if (h > 0) return m > 0 ? `${h} 小时 ${m} 分` : `${h} 小时`;
+  return `${Math.max(m, 1)} 分钟`;
+}
+
+/** 用量百分比 → 状态色名称：80% 起提醒，90% 起报警 */
+export function usageTone(pct: number): string {
+  if (pct >= 90) return "error";
+  if (pct >= 80) return "punching";
+  return "accent";
+}
+
 /** 时间戳 → “3 分钟前” */
 export function timeAgo(ms: number | null, now: number): string {
   if (ms == null) return "未知";

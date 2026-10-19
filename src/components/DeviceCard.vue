@@ -5,6 +5,7 @@ import type { Device, PingRecord, Sample } from "../api";
 import LatencyChart from "./LatencyChart.vue";
 import { connTone, formatBytes, measureLine, timeAgo } from "../format";
 import OsIcon from "./OsIcon.vue";
+import SysInfoPanel from "./SysInfoPanel.vue";
 import StatusPill from "./ui/StatusPill.vue";
 import UiButton from "./ui/UiButton.vue";
 
@@ -107,49 +108,66 @@ const timeLine = computed(() => {
     </p>
 
     <!-- 测速行（本机没有） -->
-    <div v-if="!isSelf" class="flex items-center gap-1.5 rounded-ctl bg-subtle py-1 pr-1 pl-2.5 text-xs">
-      <Gauge class="size-3.5 shrink-0 text-muted" />
-      <span
-        class="min-w-0 flex-1 truncate"
-        :class="pingLine.failed ? 'text-error' : 'text-muted'"
-        :title="pingLine.raw ? `${pingLine.text}\n\n${pingLine.raw}` : pingLine.text"
-      >
-        {{ testing ? "正在测试…" : pingLine.text }}
-      </span>
-      <UiButton
-        v-if="device.sshAlias"
-        variant="ghost"
-        size="xs"
-        :icon="SquareTerminal"
-        :disabled="offline"
-        :title="offline ? '设备离线' : `在新终端中执行 ssh ${device.sshAlias}`"
-        @click="emit('ssh', device.sshAlias)"
-      >
-        SSH
-      </UiButton>
-      <UiButton
-        v-if="rustdesk && ip"
-        variant="ghost"
-        size="xs"
-        :icon="MonitorSmartphone"
-        :disabled="offline"
-        :title="offline ? '设备离线' : `用 RustDesk 直连 ${ip}（对方需在 RustDesk 中允许 IP 直接访问）`"
-        @click="emit('rustdesk', ip)"
-      >
-        RustDesk
-      </UiButton>
-      <UiButton
-        variant="secondary"
-        size="xs"
-        :icon="Gauge"
-        :loading="testing"
-        :disabled="testing || offline"
-        :title="offline ? '设备离线，无法测试' : '测试实际路径和延迟'"
-        @click="emit('test')"
-      >
-        测试
-      </UiButton>
-    </div>
+    <template v-if="!isSelf">
+      <div class="flex items-center gap-1.5 rounded-ctl bg-subtle px-2.5 py-1.5 text-xs">
+        <Gauge class="size-3.5 shrink-0 text-muted" />
+        <span
+          class="min-w-0 flex-1 truncate"
+          :class="pingLine.failed ? 'text-error' : 'text-muted'"
+          :title="pingLine.raw ? `${pingLine.text}
+
+${pingLine.raw}` : pingLine.text"
+        >
+          {{ testing ? "正在测试…" : pingLine.text }}
+        </span>
+      </div>
+
+      <!-- 操作按钮：单独一行，有几个就平分宽度；图标用强调色，悬停时染上强调色 -->
+      <div class="grid auto-cols-fr grid-flow-col gap-2">
+        <UiButton
+          v-if="device.sshAlias"
+          size="sm"
+          class="[&_.ui-btn-icon]:text-accent enabled:hover:bg-[var(--md-accent-soft)] enabled:hover:text-accent"
+          :icon="SquareTerminal"
+          :disabled="offline"
+          :title="offline ? '设备离线' : `在新终端中执行 ssh ${device.sshAlias}`"
+          @click="emit('ssh', device.sshAlias)"
+        >
+          SSH
+        </UiButton>
+        <UiButton
+          v-if="rustdesk && ip"
+          size="sm"
+          class="[&_.ui-btn-icon]:text-accent enabled:hover:bg-[var(--md-accent-soft)] enabled:hover:text-accent"
+          :icon="MonitorSmartphone"
+          :disabled="offline"
+          :title="offline ? '设备离线' : `用 RustDesk 直连 ${ip}（对方需在 RustDesk 中允许 IP 直接访问）`"
+          @click="emit('rustdesk', ip)"
+        >
+          RustDesk
+        </UiButton>
+        <UiButton
+          size="sm"
+          class="[&_.ui-btn-icon]:text-accent enabled:hover:bg-[var(--md-accent-soft)] enabled:hover:text-accent"
+          :icon="Gauge"
+          :loading="testing"
+          :disabled="testing || offline"
+          :title="offline ? '设备离线，无法测试' : '测试实际路径和延迟'"
+          @click="emit('test')"
+        >
+          测试
+        </UiButton>
+      </div>
+
+      <!-- 系统信息：只对能 ssh 的 Linux 设备采集 -->
+      <SysInfoPanel
+        v-if="device.sshAlias && device.os === 'linux'"
+        :alias="device.sshAlias"
+        :device-id="device.id"
+        :now="now"
+        :offline="offline"
+      />
+    </template>
 
     <!-- 24 小时延迟历史（本机没有） -->
     <template v-if="!isSelf">

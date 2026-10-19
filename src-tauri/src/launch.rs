@@ -106,7 +106,7 @@ impl SshHostsCache {
 }
 
 /// 别名只允许常见字符，避免被终端当成命令分隔符或选项
-fn valid_alias(alias: &str) -> bool {
+pub fn valid_alias(alias: &str) -> bool {
     !alias.is_empty()
         && !alias.starts_with('-')
         && alias

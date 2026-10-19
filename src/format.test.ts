@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { PingRecord, Sample } from "./api";
-import { backendLabel, clock, connTone, formatBytes, formatLatency, kindLabel, measureLine, timeAgo } from "./format";
+import {
+  backendLabel,
+  clock,
+  connTone,
+  formatBytes,
+  formatLatency,
+  formatUptime,
+  kindLabel,
+  measureLine,
+  timeAgo,
+  usageTone,
+} from "./format";
 
 describe("formatBytes", () => {
   it("未知、整数和小数", () => {
@@ -13,6 +24,25 @@ describe("formatBytes", () => {
 
   it("超过 TB 时不越界", () => {
     expect(formatBytes(2048 * 1024 ** 4)).toBe("2048 TB");
+  });
+});
+
+describe("formatUptime", () => {
+  it("按天、小时、分钟取最大的两级", () => {
+    expect(formatUptime(2_380_130)).toBe("27 天 13 小时");
+    expect(formatUptime(86400 * 3)).toBe("3 天");
+    expect(formatUptime(5 * 3600 + 3 * 60)).toBe("5 小时 3 分");
+    expect(formatUptime(7200)).toBe("2 小时");
+    expect(formatUptime(720)).toBe("12 分钟");
+    expect(formatUptime(10)).toBe("1 分钟");
+  });
+});
+
+describe("usageTone", () => {
+  it("80% 提醒、90% 报警", () => {
+    expect(usageTone(79.9)).toBe("accent");
+    expect(usageTone(80)).toBe("punching");
+    expect(usageTone(90)).toBe("error");
   });
 });
 

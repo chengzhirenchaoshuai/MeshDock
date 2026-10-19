@@ -14,6 +14,7 @@ mod paths;
 mod report;
 mod router;
 mod settings;
+mod sysinfo;
 mod tray;
 mod window;
 
@@ -115,6 +116,7 @@ pub fn run() {
             commands::get_app_info,
             commands::open_ssh,
             commands::open_rustdesk,
+            commands::device_sysinfo,
         ])
         // 点击关闭按钮：默认只隐藏到托盘（真正退出走托盘菜单）；设置中关闭了该项时直接退出
         .on_window_event(|win, event| {

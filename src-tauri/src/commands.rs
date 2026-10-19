@@ -159,6 +159,12 @@ pub fn open_ssh(alias: String) -> Result<(), String> {
     crate::launch::open_ssh(&alias)
 }
 
+/// 经 ssh 只读采集 Linux 设备的系统信息（运行时长、内存、磁盘、IPv6、电池、端口）
+#[tauri::command]
+pub async fn device_sysinfo(alias: String) -> Result<crate::sysinfo::SysInfo, String> {
+    crate::sysinfo::fetch(&alias).await
+}
+
 /// 用 RustDesk 直连设备的组网 IP（对方需在 RustDesk 中允许 IP 直接访问）
 #[tauri::command]
 pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {

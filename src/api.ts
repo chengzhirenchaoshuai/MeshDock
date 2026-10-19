@@ -182,6 +182,40 @@ export const openSsh = (alias: string) => invoke<void>("open_ssh", { alias });
 /** 用 RustDesk 直连组网 IP */
 export const openRustdesk = (ip: string) => invoke<void>("open_rustdesk", { ip });
 
+/** 一个分区的用量 */
+export interface Disk {
+  mount: string;
+  totalKb: number;
+  usedKb: number;
+}
+
+/** 电池；tempC 为摄氏度，status 是内核原文（Charging、Discharging、Full、Not charging） */
+export interface Battery {
+  percent: number | null;
+  tempC: number | null;
+  status: string | null;
+}
+
+/** 经 ssh 采集的 Linux 设备系统信息，读不到的项为 null 或空数组 */
+export interface SysInfo {
+  uptimeSecs: number | null;
+  /** 1、5、15 分钟平均负载 */
+  load: [number, number, number] | null;
+  cpus: number | null;
+  memTotalKb: number | null;
+  memAvailableKb: number | null;
+  swapTotalKb: number | null;
+  swapFreeKb: number | null;
+  disks: Disk[];
+  /** 全局 IPv6 地址；为空说明拿不到 IPv6 */
+  ipv6: string[];
+  battery: Battery | null;
+  /** 对外监听的 TCP 端口 */
+  ports: number[];
+}
+/** 经 ssh <别名> 只读采集系统信息 */
+export const getSysinfo = (alias: string) => invoke<SysInfo>("device_sysinfo", { alias });
+
 /** 一次延迟测量；没有回应时 ms 与 kind 为 null */
 export interface Sample {
   atMs: number;
