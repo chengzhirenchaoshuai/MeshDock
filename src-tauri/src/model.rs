@@ -125,6 +125,8 @@ pub struct NetMapNode {
     /// 节点公钥，与 status 的 PublicKey 相同
     pub key: Option<String>,
     pub hostinfo: Option<Hostinfo>,
+    /// 设备上报的可达地址，形如 "192.168.66.80:41641"、"[2001:db8::1]:41641"
+    pub endpoints: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default, Debug, Clone)]
@@ -184,6 +186,28 @@ impl NetMap {
             .iter()
             .flatten()
             .filter_map(|p| Some((p.key.clone()?, p.hostinfo.clone()?)))
+            .collect()
+    }
+
+    /// 节点公钥 → 设备的局域网 IPv4（从上报地址里取私有地址）。
+    /// 公网地址不要：同一个家里的设备共用一个公网出口，没法区分是哪台
+    pub fn peer_lan_ips(&self) -> HashMap<String, Vec<String>> {
+        self.peers
+            .iter()
+            .flatten()
+            .filter_map(|p| {
+                let key = p.key.clone()?;
+                let ips: Vec<String> = p
+                    .endpoints
+                    .iter()
+                    .flatten()
+                    .filter_map(|e| e.parse::<std::net::SocketAddrV4>().ok())
+                    .map(|a| *a.ip())
+                    .filter(|ip| ip.is_private())
+                    .map(|ip| ip.to_string())
+                    .collect();
+                (!ips.is_empty()).then_some((key, ips))
+            })
             .collect()
     }
 }
@@ -300,5 +324,20 @@ mod tests {
             time_ms(Some("2026-10-16T18:17:15.250730444+08:00")),
             Some(1_792_145_835_250)
         );
+    }
+
+    #[test]
+    fn netmap_只取私有_ipv4_作为局域网地址() {
+        let m: NetMap = serde_json::from_str(
+            r#"{"Peers":[
+                {"Key":"k1","Endpoints":["198.51.100.27:41641","[2001:db8:8256::1]:41641","192.168.66.80:41641"]},
+                {"Key":"k2","Endpoints":["198.51.100.112:41641"]},
+                {"Key":"k3"}
+            ]}"#,
+        )
+        .unwrap();
+        let lan = m.peer_lan_ips();
+        assert_eq!(lan.get("k1"), Some(&vec!["192.168.66.80".to_string()]));
+        assert_eq!(lan.len(), 1);
     }
 }

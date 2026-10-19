@@ -205,6 +205,8 @@ struct NetInfos {
     me: Option<NetInfo>,
     /// 节点公钥 → 设备上报的主机信息
     peers: HashMap<String, Hostinfo>,
+    /// 节点公钥 → 设备的局域网 IPv4，用来对应 ~/.ssh/config 里写局域网地址的别名
+    lan_ips: HashMap<String, Vec<String>>,
 }
 
 /// 中继区域表读取失败后，多久再重试
@@ -382,6 +384,7 @@ impl Monitor {
                 let infos = Arc::new(NetInfos {
                     me: map.self_net_info(),
                     peers: map.peer_hostinfo(),
+                    lan_ips: map.peer_lan_ips(),
                 });
                 *self.inner.net_infos.lock().unwrap() = Some((Instant::now(), infos.clone()));
                 Some(infos)
@@ -390,14 +393,17 @@ impl Monitor {
         }
     }
 
-    /// 用 netmap 补充信息：给走中继的设备补上可能的原因，生成子网路由器的健康状态。
-    /// 既没有设备走中继、也没有子网路由器时不读取 netmap
+    /// 用 netmap 补充信息：给走中继的设备补上可能的原因，按局域网地址补 SSH 别名，生成子网路由器的健康状态。
+    /// 既没有设备走中继、也没有子网路由器、也没有缺 SSH 别名的设备时不读取 netmap
     async fn enrich(&self, overview: &mut Overview) {
         let has_relay = overview
             .peers
             .iter()
             .any(|d| d.conn.kind == ConnKind::Relay);
-        if !has_relay && overview.subnet_routes.is_empty() {
+        let ssh_hosts = self.inner.ssh_hosts.get();
+        let missing_alias =
+            !ssh_hosts.is_empty() && overview.peers.iter().any(|d| d.ssh_alias.is_none());
+        if !has_relay && overview.subnet_routes.is_empty() && !missing_alias {
             return;
         }
         let infos = self.net_infos().await;
@@ -410,6 +416,13 @@ impl Monitor {
             let me = infos.as_ref().and_then(|i| i.me.as_ref());
             let reason = classify::relay_reason(me, peer);
             d.conn = classify::with_relay_reason(d.conn.clone(), reason);
+            // 组网 IP 和名称都对不上时，再看 ssh 配置里有没有写这台设备局域网地址的别名（如手机的 phone）
+            if d.ssh_alias.is_none()
+                && let Some(lan) = infos.as_ref().zip(d.key.as_ref()).and_then(|(i, k)| i.lan_ips.get(k))
+            {
+                let candidates: Vec<&str> = lan.iter().map(String::as_str).collect();
+                d.ssh_alias = launch::alias_for(&ssh_hosts, &candidates).map(str::to_string);
+            }
         }
         overview.routers = overview
             .subnet_routes
