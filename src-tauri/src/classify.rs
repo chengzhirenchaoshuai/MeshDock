@@ -426,8 +426,8 @@ mod tests {
             got,
             [
                 ("ming-pc".into(), ConnKind::Lan),
-                ("phone-router".into(), ConnKind::Idle),
                 ("work-laptop".into(), ConnKind::Offline),
+                ("phone-router".into(), ConnKind::Idle),
             ]
         );
     }
