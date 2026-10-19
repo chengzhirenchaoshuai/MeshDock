@@ -282,6 +282,16 @@ async function takeTrayRequest() {
   requestMode(on);
 }
 
+// 启动后组网一连上就测一遍全部设备（结果也记入延迟历史，后台测速从下一个间隔开始）
+const stopStartupTest = watch(
+  () => !linkDown.value && testablePeers.value.length > 0,
+  (ready) => {
+    if (!ready) return;
+    stopStartupTest();
+    testAll();
+  },
+);
+
 const unlisteners: (() => void)[] = [];
 let clockTimer: number | undefined;
 onMounted(async () => {

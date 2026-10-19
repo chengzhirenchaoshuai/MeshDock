@@ -87,7 +87,6 @@ pub struct Location {
 
 /// 延迟历史更新时推给前端的事件
 pub const HISTORY_EVENT: &str = "history";
-const HISTORY_FIRST_DELAY: Duration = Duration::from_secs(30);
 
 /// 记入历史并推给前端（后台测量和手动测试共用）
 pub fn record_history(app: &AppHandle, samples: Vec<(String, Sample)>) {
@@ -221,9 +220,11 @@ struct NetInfos {
     lan_ips: HashMap<String, Vec<String>>,
 }
 
-/// 启动后多久第一次检查官方客户端新版本，之后多久检查一次
-const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(60);
+/// 启动后多久第一次检查官方客户端新版本（留几秒给开机时的网络），之后多久检查一次
+const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(5);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
+/// 检查失败（如开机时还没联网）后，多久重试
+const UPDATE_RETRY: Duration = Duration::from_secs(10 * 60);
 
 /// 中继区域表读取失败后，多久再重试
 const REGIONS_RETRY: Duration = Duration::from_secs(60);
@@ -274,22 +275,24 @@ impl Monitor {
                 }
             }
         });
-        // 官方客户端新版本：启动 1 分钟后检查，之后每 6 小时一次
+        // 官方客户端新版本：启动后立即检查，之后每 6 小时一次；查不到时 10 分钟后重试
         let this = self.clone();
         let update_app = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(UPDATE_FIRST_DELAY).await;
             loop {
-                this.check_client_update(&update_app).await;
-                tokio::time::sleep(UPDATE_INTERVAL).await;
+                let wait = if this.check_client_update(&update_app).await {
+                    UPDATE_INTERVAL
+                } else {
+                    UPDATE_RETRY
+                };
+                tokio::time::sleep(wait).await;
             }
         });
-        // 延迟历史：启动 30 秒后开始，之后按设置的间隔测一次在线设备
+        // 延迟历史：启动时前端会测一遍全部设备并记入历史，后台从下一个间隔开始测
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(HISTORY_FIRST_DELAY).await;
             loop {
-                this.sample_history(&app).await;
                 let last = Instant::now();
                 // 等到下一次测速；期间改了间隔会被唤醒，按新间隔重新计算剩余时间
                 loop {
@@ -302,14 +305,15 @@ impl Monitor {
                         _ = this.inner.history_wake.notified() => {}
                     }
                 }
+                this.sample_history(&app).await;
             }
         });
     }
 
-    /// 检查官方客户端有没有新版本；发现新的版本号时发一次通知。查不到（如断网）时保持原结果
-    async fn check_client_update(&self, app: &AppHandle) {
+    /// 检查官方客户端有没有新版本；发现新的版本号时发一次通知。查不到（如断网）时保持原结果并返回 false
+    async fn check_client_update(&self, app: &AppHandle) -> bool {
         let Ok(info) = cli::version_upstream().await else {
-            return;
+            return false;
         };
         let newer = info.newer_upstream();
         let previous = std::mem::replace(
@@ -317,8 +321,10 @@ impl Monitor {
             newer.clone(),
         );
         let Some(v) = newer.filter(|v| previous.as_ref() != Some(v)) else {
-            return;
+            return true;
         };
+        // 立即刷新一次，让本机卡片马上标出新版本
+        self.wake();
         crate::applog::info(format!("Tailscale 官方客户端有新版本 {v}"));
         if app.state::<SettingsStore>().get().notify
             && let Err(e) = app
@@ -330,6 +336,7 @@ impl Monitor {
         {
             crate::applog::error(format!("发送通知失败：{e}"));
         }
+        true
     }
 
     /// 刷新或测速间隔改了：立即按新间隔重新计时

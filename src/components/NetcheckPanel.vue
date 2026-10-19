@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from "vue";
+import { computed, onMounted, ref, type Component } from "vue";
 import { CircleAlert, CircleCheck, CircleX, FileText, Info, ListChecks, Radar, Stethoscope } from "@lucide/vue";
 import { runNetcheck, type CliError, type Level, type NetcheckReport } from "../api";
 import { clock, formatLatency } from "../format";
@@ -25,6 +25,9 @@ async function run() {
     busy.value = false;
   }
 }
+
+// 程序启动时自动体检一次
+onMounted(run);
 
 /** 结论级别 → 图标、状态色名称、排序（数字小的排前面） */
 const levelStyle: Record<Level, { icon: Component; tone: string; order: number }> = {
