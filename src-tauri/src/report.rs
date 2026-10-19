@@ -128,6 +128,31 @@ pub fn compose(input: &Input) -> String {
                     None => "读取不到",
                 }
             ));
+            if let Some(p) = &o.prefs {
+                let exit = match &p.exit_node_id {
+                    None => "不用".to_string(),
+                    Some(id) => o
+                        .peers
+                        .iter()
+                        .find(|d| &d.id == id)
+                        .map_or_else(|| format!("{id}（不在设备列表中）"), |d| d.name.clone()),
+                };
+                let yn = |v: Option<bool>| match v {
+                    Some(true) => "开",
+                    Some(false) => "关",
+                    None => "读取不到",
+                };
+                line(format!(
+                    "出口：{exit}（走出口时访问本地局域网：{}）",
+                    yn(p.exit_node_allow_lan)
+                ));
+                line(format!(
+                    "组网 DNS：{}；挡住传入连接：{}；无人登录时保持连接：{}",
+                    yn(p.accept_dns),
+                    yn(p.shields_up),
+                    yn(p.unattended)
+                ));
+            }
             let l = &o.location;
             line(format!(
                 "位置：{}（{}；默认网关：{}；家里网关：{}）",

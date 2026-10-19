@@ -58,6 +58,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let paths = AppPaths::resolve(app.handle())?;
@@ -112,6 +113,14 @@ pub fn run() {
             commands::get_settings,
             commands::take_mode_request,
             commands::set_accept_routes,
+            commands::set_exit_node,
+            commands::set_pref_switch,
+            commands::send_files,
+            commands::get_profiles,
+            commands::get_serve_rules,
+            commands::add_serve_rule,
+            commands::remove_serve_rule,
+            commands::switch_profile,
             commands::save_settings,
             commands::get_app_info,
             commands::open_ssh,

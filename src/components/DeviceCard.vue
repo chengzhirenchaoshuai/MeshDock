@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ArrowDown, ArrowUp, Copy, Gauge, MonitorSmartphone, SquareTerminal } from "@lucide/vue";
+import { ArrowDown, ArrowUp, Copy, Gauge, MonitorSmartphone, Send, SquareTerminal } from "@lucide/vue";
 import type { Device, PingRecord, Sample } from "../api";
 import LatencyChart from "./LatencyChart.vue";
 import { connTone, formatBytes, measureLine, timeAgo } from "../format";
@@ -25,8 +25,10 @@ const props = defineProps<{
   rustdesk?: boolean;
   /** 最近 24 小时的延迟测量 */
   history?: Sample[];
+  /** 正在给这台设备发文件 */
+  sending?: boolean;
 }>();
-const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string] }>();
+const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string]; send: [] }>();
 
 const offline = computed(() => props.device.conn.kind === "offline");
 const isSelf = computed(() => props.device.conn.kind === "self-node");
@@ -149,6 +151,17 @@ ${pingLine.raw}` : pingLine.text"
         <UiButton
           size="sm"
           class="[&_.ui-btn-icon]:text-accent enabled:hover:bg-[var(--md-accent-soft)] enabled:hover:text-accent"
+          :icon="Send"
+          :loading="sending"
+          :disabled="sending || offline"
+          :title="offline ? '设备离线' : sending ? '正在发送…' : '选择文件，用 Taildrop 发给这台设备（对方的官方客户端会存到“下载”文件夹）'"
+          @click="emit('send')"
+        >
+          发文件
+        </UiButton>
+        <UiButton
+          size="sm"
+          class="[&_.ui-btn-icon]:text-accent enabled:hover:bg-[var(--md-accent-soft)] enabled:hover:text-accent"
           :icon="Gauge"
           :loading="testing"
           :disabled="testing || offline"
@@ -176,7 +189,7 @@ ${pingLine.raw}` : pingLine.text"
     </template>
 
     <footer class="mt-auto flex items-center gap-4 border-t border-line pt-3 text-xs text-muted">
-      <span v-if="note">{{ note }}</span>
+      <span v-if="note" class="min-w-0 leading-relaxed">{{ note }}</span>
       <template v-else>
         <span class="num inline-flex items-center gap-1" title="从这台设备收到的数据">
           <ArrowDown class="size-3.5 text-faint" />{{ formatBytes(device.rxBytes) }}

@@ -1,15 +1,35 @@
 <script setup lang="ts">
 import { onMounted, ref, type Component } from "vue";
 import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
-import { getAppInfo, type AppInfo, type Settings, type ThemeMode } from "../api";
+import {
+  getAppInfo,
+  type AppInfo,
+  type LocalPrefs,
+  type PrefSwitch,
+  type Settings,
+  type Snapshot,
+  type ThemeMode,
+} from "../api";
 import { PALETTES } from "../palette";
+import AccountsCard from "./AccountsCard.vue";
+import NetPrefsCard from "./NetPrefsCard.vue";
 import UiCard from "./ui/UiCard.vue";
 import UiSegmented from "./ui/UiSegmented.vue";
 import UiSwitch from "./ui/UiSwitch.vue";
 
-/** gateways：当前读到的默认网关，方便直接选作家里网关 */
-const props = defineProps<{ settings: Settings | null; gateways: string[] }>();
-const emit = defineEmits<{ save: [settings: Settings] }>();
+/** gateways：当前读到的默认网关，方便直接选作家里网关；prefs：本机组网选项（存在 tailscale 里，不在设置文件） */
+const props = defineProps<{
+  settings: Settings | null;
+  gateways: string[];
+  prefs: LocalPrefs | null;
+  prefBusy: boolean;
+}>();
+const emit = defineEmits<{
+  save: [settings: Settings];
+  togglePref: [pref: PrefSwitch, on: boolean, ok: string];
+  /** 切换账户成功：带回新快照 */
+  switched: [snapshot: Snapshot, name: string];
+}>();
 
 const info = ref<AppInfo | null>(null);
 onMounted(async () => (info.value = await getAppInfo()));
@@ -137,6 +157,12 @@ function saveGateway(value: string) {
         </div>
       </div>
     </UiCard>
+
+    <!-- 组网选项：直接改 tailscale 的设置 -->
+    <NetPrefsCard :prefs="prefs" :busy="prefBusy" @toggle="(p, on, ok) => emit('togglePref', p, on, ok)" />
+
+    <!-- 账户：多个组网之间切换 -->
+    <AccountsCard @switched="(s, name) => emit('switched', s, name)" />
 
     <!-- 位置识别 -->
     <UiCard title="在家识别" :icon="House">

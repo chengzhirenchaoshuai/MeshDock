@@ -8,6 +8,7 @@ import {
   Network,
   Plug,
   RefreshCw,
+  Search,
   Settings2,
   Stethoscope,
   TriangleAlert,
@@ -26,25 +27,31 @@ import {
   openSsh,
   refresh,
   saveSettings,
+  sendFiles,
   setAcceptRoutes,
+  setExitNode,
+  setPrefSwitch,
   takeModeRequest,
   type CliError,
   type History,
+  type PrefSwitch,
   type Settings,
   type Snapshot,
 } from "./api";
-import { backendLabel, clock, connTone } from "./format";
+import { backendLabel, clock, connTone, matchDevice } from "./format";
 import { applyPalette } from "./palette";
 import { usePing } from "./composables/usePing";
 import { useToast } from "./composables/useToast";
 import ConnectErrorDialog from "./components/ConnectErrorDialog.vue";
 import DeviceCard from "./components/DeviceCard.vue";
 import ErrorView from "./components/ErrorView.vue";
+import ExitNodePanel from "./components/ExitNodePanel.vue";
 import DisconnectConfirm from "./components/DisconnectConfirm.vue";
 import ModeConfirm from "./components/ModeConfirm.vue";
 import ModePanel from "./components/ModePanel.vue";
 import RouterPanel from "./components/RouterPanel.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
+import ServePanel from "./components/ServePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import StatusPill from "./components/ui/StatusPill.vue";
 import UiButton from "./components/ui/UiButton.vue";
@@ -95,6 +102,14 @@ const stats = computed(() => {
     { tone: "offline", label: "离线", n: count("offline"), always: true },
   ].filter((s) => s.always || s.n > 0);
 });
+
+// ---------- 设备搜索 ----------
+const query = ref("");
+const onlineOnly = ref(false);
+const shownPeers = computed(() =>
+  peers.value.filter((d) => matchDevice(d, query.value) && (!onlineOnly.value || d.conn.kind !== "offline")),
+);
+const filtering = computed(() => query.value.trim() !== "" || onlineOnly.value);
 
 /** 1.102.4-t1a2b3c-g4d5e6f → 1.102.4 */
 const shortVersion = (v: string | null) => (v ? v.split("-")[0] : "版本未知");
@@ -187,6 +202,53 @@ async function switchMode(on: boolean, fromDialog: boolean) {
     else showError(`切换失败：${(e as CliError).message}`);
   } finally {
     modeBusy.value = false;
+  }
+}
+
+// ---------- 出口节点和其他本机组网选项 ----------
+const prefBusy = ref(false);
+
+/** 执行一项本机设置的修改，成功提示 ok，失败用提示条显示原因 */
+async function applyPref(run: () => Promise<Snapshot>, ok: string) {
+  if (prefBusy.value) return;
+  prefBusy.value = true;
+  try {
+    snapshot.value = await run();
+    showOk(ok);
+  } catch (e) {
+    showError(`设置失败：${(e as CliError).message}`);
+  } finally {
+    prefBusy.value = false;
+  }
+}
+
+function selectExit(id: string | null) {
+  const name = peers.value.find((d) => d.id === id)?.name;
+  applyPref(() => setExitNode(id), id ? `已改为经 ${name} 上网` : "已停用出口");
+}
+
+function togglePref(pref: PrefSwitch, on: boolean, ok: string) {
+  applyPref(() => setPrefSwitch(pref, on), ok);
+}
+
+// ---------- 发送文件（Taildrop） ----------
+/** 正在发送的设备 id */
+const sending = ref(new Set<string>());
+
+async function sendTo(id: string) {
+  sending.value = new Set(sending.value).add(id);
+  try {
+    const r = await sendFiles(id);
+    if (r) {
+      const what = r.files.length === 1 ? r.files[0] : `${r.files.length} 个文件`;
+      showOk(`已把 ${what} 发给 ${r.device}`);
+    }
+  } catch (e) {
+    showError((e as CliError).message);
+  } finally {
+    const next = new Set(sending.value);
+    next.delete(id);
+    sending.value = next;
   }
 }
 
@@ -332,7 +394,15 @@ onUnmounted(() => {
     </main>
 
     <main v-show="tab === 'settings'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
-      <SettingsPanel :settings="settings" :gateways="overview?.location.gateways ?? []" @save="updateSettings" />
+      <SettingsPanel
+        :settings="settings"
+        :gateways="overview?.location.gateways ?? []"
+        :prefs="overview?.prefs ?? null"
+        :pref-busy="prefBusy"
+        @save="updateSettings"
+        @toggle-pref="togglePref"
+        @switched="(s, name) => ((snapshot = s), showOk(`已切换到 ${name}`))"
+      />
     </main>
 
     <main v-show="tab === 'devices'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
@@ -371,6 +441,15 @@ onUnmounted(() => {
           @set-at-home="updateAtHome"
         />
 
+        <ExitNodePanel
+          class="mb-5"
+          :overview="overview"
+          :busy="prefBusy"
+          :disabled="linkDown"
+          @select="selectExit"
+          @allow-lan="togglePref('exit-node-allow-lan', $event, `已${$event ? '开启' : '关闭'}“走出口时访问本地局域网”`)"
+        />
+
         <!-- 组网断开时，下面的路由器和设备是断开前的旧信息：说明并调暗 -->
         <UiCallout v-if="linkDown" tone="offline" :icon="Unplug" class="mb-5">
           组网{{ backendLabel(overview.backendState) }}：下面的子网路由器和设备是断开前最后看到的信息，可能已经过时。点顶栏“连接”重新加入组网后会自动更新。
@@ -389,7 +468,17 @@ onUnmounted(() => {
             <DeviceCard
               :device="overview.selfDevice"
               :now="now"
-              :note="`Tailscale 官方客户端 ${shortVersion(overview.version)}`"
+              :note="
+                `Tailscale 官方客户端 ${shortVersion(overview.version)}` +
+                (overview.clientUpdate ? ` · 有新版 ${overview.clientUpdate}，可在官方客户端托盘菜单中更新` : '')
+              "
+              @copy="copyIp"
+            />
+            <ServePanel
+              :self-ip="overview.selfDevice.ips.find((a) => !a.includes(':')) ?? null"
+              :disabled="linkDown"
+              @ok="showOk"
+              @error="showError"
               @copy="copyIp"
             />
           </div>
@@ -398,15 +487,40 @@ onUnmounted(() => {
         <!-- 其他设备 -->
         <section :class="{ 'pointer-events-none opacity-50 select-none': linkDown }" :aria-disabled="linkDown">
           <h2 class="mb-2.5 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted">
-            组网设备<span class="num font-normal text-faint">{{ peers.length }}</span><span class="h-px flex-1 bg-line" />
+            组网设备<span class="num font-normal text-faint">
+              <template v-if="filtering">{{ shownPeers.length }} / </template>{{ peers.length }}
+            </span>
+            <span class="h-px flex-1 bg-line" />
+            <!-- 搜索和筛选：设备不多时也显示，方便按 IP 找设备 -->
+            <template v-if="peers.length">
+              <label class="flex cursor-pointer items-center gap-1.5 font-normal tracking-normal">
+                <input v-model="onlineOnly" type="checkbox" class="accent-[var(--md-accent)]" />只看在线
+              </label>
+              <span class="relative font-normal tracking-normal">
+                <Search class="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-faint" />
+                <input
+                  v-model="query"
+                  type="search"
+                  class="ui-input w-48 py-1 pl-7 text-xs select-text"
+                  placeholder="搜索名称、IP、系统"
+                  @keydown.esc="query = ''"
+                />
+              </span>
+            </template>
           </h2>
           <div v-if="peers.length === 0" class="ui-card flex flex-col items-center gap-3 py-12 text-center text-muted">
             <Network class="size-8 text-faint" />
             组网里还没有其他设备
           </div>
+          <div v-else-if="shownPeers.length === 0" class="ui-card py-8 text-center text-sm text-muted">
+            没有符合条件的设备
+            <button type="button" class="ml-2 text-accent hover:underline" @click="(query = ''), (onlineOnly = false)">
+              清除筛选
+            </button>
+          </div>
           <div v-else class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             <DeviceCard
-              v-for="d in peers"
+              v-for="d in shownPeers"
               :key="d.id"
               :device="d"
               :now="now"
@@ -418,6 +532,8 @@ onUnmounted(() => {
               @test="testOne(d)"
               @ssh="launch(openSsh, $event)"
               @rustdesk="launch(openRustdesk, $event)"
+              :sending="sending.has(d.id)"
+              @send="sendTo(d.id)"
             />
           </div>
         </section>

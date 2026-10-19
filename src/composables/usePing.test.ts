@@ -21,6 +21,8 @@ function device(id: string, ips: string[], kind: ConnKind = "lan"): Device {
     lastSeenMs: null,
     lastHandshakeMs: null,
     sshAlias: null,
+    exitOption: false,
+    exitActive: false,
   };
 }
 

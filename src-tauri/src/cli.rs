@@ -1,6 +1,8 @@
 //! 调用官方 tailscale.exe：统一超时、隐藏黑框、把失败归类成带中文说明的错误
 use crate::classify::{LocalNet, PingResult, Regions, parse_ping};
-use crate::model::{DerpMap, NetMap, Netcheck, Prefs, Status, parse_netcheck, parse_netmap};
+use crate::model::{
+    DerpMap, NetMap, Netcheck, Prefs, Status, VersionInfo, parse_netcheck, parse_netmap,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::path::PathBuf;
@@ -109,6 +111,11 @@ fn known_failure(text: &str) -> Option<ErrorKind> {
 /// 执行命令。只要进程正常结束就返回输出（不论退出码），由调用方决定是否算失败；
 /// 但服务没运行、权限不足这类情况统一当作错误
 pub async fn run(args: &[&str]) -> Result<Output, CliError> {
+    run_timeout(args, TIMEOUT).await
+}
+
+/// 同 run，但可指定超时（发送文件等耗时操作用）
+async fn run_timeout(args: &[&str], timeout: Duration) -> Result<Output, CliError> {
     let exe = exe_path().ok_or_else(|| CliError::new(ErrorKind::NotInstalled, ""))?;
     let mut cmd = Command::new(&exe);
     cmd.args(args)
@@ -119,7 +126,7 @@ pub async fn run(args: &[&str]) -> Result<Output, CliError> {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let out = match tokio::time::timeout(TIMEOUT, cmd.output()).await {
+    let out = match tokio::time::timeout(timeout, cmd.output()).await {
         Err(_) => {
             return Err(CliError::new(
                 ErrorKind::Timeout,
@@ -173,6 +180,11 @@ pub async fn status() -> Result<Status, CliError> {
 
 pub async fn prefs() -> Result<Prefs, CliError> {
     run_json(&["debug", "prefs"]).await
+}
+
+/// 本机版本和官方最新版本（需要访问官方服务器，约 2 秒）
+pub async fn version_upstream() -> Result<VersionInfo, CliError> {
+    run_json(&["version", "--upstream", "--json"]).await
 }
 
 pub async fn derp_map() -> Result<DerpMap, CliError> {
@@ -346,6 +358,237 @@ pub async fn set_accept_routes(on: bool) -> Result<(), CliError> {
     run_checked(&["set", &flag]).await.map(|_| ())
 }
 
+/// 选用出口设备（传组网 IP），None 表示停用出口。
+/// 只接受合法 IP，避免把以 `-` 开头的文本当成命令选项
+pub async fn set_exit_node(ip: Option<&str>) -> Result<(), CliError> {
+    let value = match ip {
+        Some(ip) => ip
+            .parse::<std::net::IpAddr>()
+            .map_err(|_| CliError {
+                kind: ErrorKind::Failed,
+                message: "IP 地址格式不正确".into(),
+                raw: ip.into(),
+            })?
+            .to_string(),
+        None => String::new(),
+    };
+    let flag = format!("--exit-node={value}");
+    run_checked(&["set", &flag]).await.map(|_| ())
+}
+
+/// 已登录的一个账户（`tailscale switch --list --json` 的一项）
+#[derive(serde::Deserialize, Serialize, Clone, Debug, Default, PartialEq)]
+#[serde(default)]
+pub struct Profile {
+    pub id: String,
+    pub nickname: String,
+    /// 组网名；Headscale 下是控制端地址
+    pub tailnet: String,
+    pub account: String,
+    pub selected: bool,
+}
+
+pub async fn profiles() -> Result<Vec<Profile>, CliError> {
+    run_json(&["switch", "--list", "--json"]).await
+}
+
+/// 切换账户的超时：要断开当前组网再连上另一个
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 切换到另一个已登录的账户。id 只接受字母和数字（实机形如 "aa49"），避免被当成选项
+pub async fn switch_profile(id: &str) -> Result<(), CliError> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err(CliError {
+            kind: ErrorKind::Failed,
+            message: "账户编号格式不正确".into(),
+            raw: id.into(),
+        });
+    }
+    let out = run_timeout(&["switch", id], SWITCH_TIMEOUT).await?;
+    if out.success {
+        Ok(())
+    } else {
+        Err(CliError::new(ErrorKind::Failed, out.text()))
+    }
+}
+
+/// 共享本机服务（tailscale serve）的方式。HTTPS 需要控制端签发证书，Headscale 不支持，不提供
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServeKind {
+    Http,
+    Tcp,
+}
+
+impl ServeKind {
+    fn flag(self, port: u16) -> String {
+        match self {
+            Self::Http => format!("--http={port}"),
+            Self::Tcp => format!("--tcp={port}"),
+        }
+    }
+
+    /// 本机目标地址，只转发到 127.0.0.1
+    fn target(self, local_port: u16) -> String {
+        match self {
+            Self::Http => format!("http://127.0.0.1:{local_port}"),
+            Self::Tcp => format!("tcp://127.0.0.1:{local_port}"),
+        }
+    }
+}
+
+/// 当前的共享规则
+pub async fn serve_rules() -> Result<Vec<crate::model::ServeRule>, CliError> {
+    let s: crate::model::ServeStatus = run_json(&["serve", "status", "--json"]).await?;
+    Ok(s.rules())
+}
+
+fn check_port(port: u16) -> Result<(), CliError> {
+    if port == 0 {
+        return Err(CliError {
+            kind: ErrorKind::Failed,
+            message: "端口要在 1～65535 之间".into(),
+            raw: port.to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// 在组网的 port 端口共享本机的 local_port（后台运行，重启后仍保留）
+pub async fn serve_add(kind: ServeKind, port: u16, local_port: u16) -> Result<(), CliError> {
+    check_port(port)?;
+    check_port(local_port)?;
+    let flag = kind.flag(port);
+    let target = kind.target(local_port);
+    run_checked(&["serve", "--bg", "--yes", &flag, &target])
+        .await
+        .map(|_| ())
+}
+
+/// 删除一条共享规则。kind 为 "https" 的规则（官方客户端或命令行加的）也能删
+pub async fn serve_remove(kind: &str, port: u16) -> Result<(), CliError> {
+    check_port(port)?;
+    let flag = match kind {
+        "http" => format!("--http={port}"),
+        "https" => format!("--https={port}"),
+        "tcp" => format!("--tcp={port}"),
+        _ => {
+            return Err(CliError {
+                kind: ErrorKind::Failed,
+                message: "不认识的共享方式".into(),
+                raw: kind.into(),
+            });
+        }
+    };
+    run_checked(&["serve", &flag, "off"]).await.map(|_| ())
+}
+
+/// 发送文件的超时：大文件经中继可能要很久，只防止永远卡住
+const SEND_TIMEOUT: Duration = Duration::from_secs(60 * 60);
+
+/// 用 Taildrop 把文件发给某台设备（`tailscale file cp <文件…> <IP>:`）。
+/// 文件必须是绝对路径（不会以 `-` 开头被当成选项），IP 必须合法
+pub async fn send_files(files: &[std::path::PathBuf], ip: &str) -> Result<(), CliError> {
+    let bad = |raw: String, message: &str| CliError {
+        kind: ErrorKind::Failed,
+        message: message.into(),
+        raw,
+    };
+    let ip: std::net::IpAddr = ip.parse().map_err(|_| bad(ip.into(), "IP 地址格式不正确"))?;
+    if files.is_empty() {
+        return Err(bad(String::new(), "没有选择文件"));
+    }
+    let files: Vec<String> = files
+        .iter()
+        .map(|f| {
+            f.is_absolute()
+                .then(|| f.display().to_string())
+                .ok_or_else(|| bad(f.display().to_string(), "文件路径不正确"))
+        })
+        .collect::<Result<_, _>>()?;
+    let target = format!("{ip}:");
+    let mut args = vec!["file", "cp", "--update-interval=0"];
+    args.extend(files.iter().map(String::as_str));
+    args.push(&target);
+    let out = match run_timeout(&args, SEND_TIMEOUT).await {
+        Err(e) if e.kind == ErrorKind::Timeout => {
+            return Err(CliError {
+                message: "发送超过 1 小时还没完成，已停止".into(),
+                ..e
+            });
+        }
+        r => r?,
+    };
+    if out.success {
+        Ok(())
+    } else {
+        Err(CliError {
+            kind: ErrorKind::Failed,
+            message: send_failure(&out.text()).into(),
+            raw: out.text(),
+        })
+    }
+}
+
+/// 发送失败的中文原因（按 tailscale.exe 的英文提示判断，认不出时给通用说明）
+fn send_failure(text: &str) -> &'static str {
+    let lower = text.to_lowercase();
+    if lower.contains("offline") {
+        "对方设备离线，发送失败"
+    } else if lower.contains("not a valid target") || lower.contains("no matching peer") {
+        "对方不接收文件：通常是对方不属于同一个用户，或控制端没有开放文件传输"
+    } else {
+        "发送失败，可展开查看原始输出"
+    }
+}
+
+/// 可在界面上开关的本机组网选项（都用 `tailscale set --<参数>=true/false`）
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrefSwitch {
+    /// 走出口时仍可访问本机所在局域网
+    ExitNodeAllowLan,
+    AcceptDns,
+    ShieldsUp,
+    Unattended,
+}
+
+impl PrefSwitch {
+    pub fn flag(self) -> &'static str {
+        match self {
+            Self::ExitNodeAllowLan => "--exit-node-allow-lan-access",
+            Self::AcceptDns => "--accept-dns",
+            Self::ShieldsUp => "--shields-up",
+            Self::Unattended => "--unattended",
+        }
+    }
+
+    /// 日志和提示里用的中文名
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ExitNodeAllowLan => "走出口时访问本地局域网",
+            Self::AcceptDns => "使用组网 DNS",
+            Self::ShieldsUp => "挡住传入连接",
+            Self::Unattended => "无人登录时保持连接",
+        }
+    }
+
+    /// 从读到的本机选项里取出这一项的值
+    pub fn read(self, p: &crate::model::LocalPrefs) -> Option<bool> {
+        match self {
+            Self::ExitNodeAllowLan => p.exit_node_allow_lan,
+            Self::AcceptDns => p.accept_dns,
+            Self::ShieldsUp => p.shields_up,
+            Self::Unattended => p.unattended,
+        }
+    }
+}
+
+pub async fn set_switch(switch: PrefSwitch, on: bool) -> Result<(), CliError> {
+    let flag = format!("{}={on}", switch.flag());
+    run_checked(&["set", &flag]).await.map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +607,62 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(e.message, "IP 地址格式不正确");
+        let e = set_exit_node(Some("--reset")).await.unwrap_err();
+        assert_eq!(e.message, "IP 地址格式不正确");
+    }
+
+    #[tokio::test]
+    async fn 发送文件拒绝非法参数() {
+        let abs = [std::path::PathBuf::from(r"C:\a.txt")];
+        let e = send_files(&abs, "--help").await.unwrap_err();
+        assert_eq!(e.message, "IP 地址格式不正确");
+        let rel = [std::path::PathBuf::from("-x")];
+        let e = send_files(&rel, "100.64.0.3").await.unwrap_err();
+        assert_eq!(e.message, "文件路径不正确");
+        let e = send_files(&[], "100.64.0.3").await.unwrap_err();
+        assert_eq!(e.message, "没有选择文件");
+    }
+
+    #[test]
+    fn 共享只转发到本机() {
+        assert_eq!(ServeKind::Http.flag(8080), "--http=8080");
+        assert_eq!(ServeKind::Tcp.target(22), "tcp://127.0.0.1:22");
+        assert!(serde_json::from_str::<ServeKind>(r#""https""#).is_err());
+    }
+
+    #[tokio::test]
+    async fn 共享拒绝非法参数() {
+        let e = serve_add(ServeKind::Http, 0, 80).await.unwrap_err();
+        assert_eq!(e.message, "端口要在 1～65535 之间");
+        let e = serve_remove("--reset", 80).await.unwrap_err();
+        assert_eq!(e.message, "不认识的共享方式");
+    }
+
+    #[test]
+    fn 解析账户列表() {
+        // 2026-10-19 实机输出（控制端地址已替换）
+        let list: Vec<Profile> = serde_json::from_str(
+            r#"[{"id":"aa49","nickname":"peng","tailnet":"203.0.113.1","account":"peng","selected":true}]"#,
+        )
+        .unwrap();
+        assert_eq!(list.len(), 1);
+        assert!(list[0].selected);
+        assert_eq!(list[0].id, "aa49");
+    }
+
+    #[tokio::test]
+    async fn 切换账户拒绝非法编号() {
+        for id in ["", "--remove", "a b"] {
+            let e = switch_profile(id).await.unwrap_err();
+            assert_eq!(e.message, "账户编号格式不正确");
+        }
+    }
+
+    #[test]
+    fn 开关选项按名称反序列化() {
+        let s: PrefSwitch = serde_json::from_str(r#""shields-up""#).unwrap();
+        assert_eq!(s.flag(), "--shields-up");
+        assert!(serde_json::from_str::<PrefSwitch>(r#""reset""#).is_err());
     }
 
     /// 按 tailscale.exe 1.102.4 中的提示原文构造

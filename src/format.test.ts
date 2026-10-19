@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { PingRecord, Sample } from "./api";
+import type { Device, PingRecord, Sample } from "./api";
 import {
   backendLabel,
   clock,
   connTone,
   formatBytes,
   formatLatency,
+  matchDevice,
   formatUptime,
   kindLabel,
   measureLine,
@@ -142,5 +143,25 @@ describe("measureLine", () => {
   it("后台测速比手动测试新时用后台结果", () => {
     const line = measureLine(manual(600_000), [sample(30_000, 3)], now);
     expect(line.text).toBe("延迟 3 ms · 局域网直连 · 刚刚测得");
+  });
+});
+
+describe("matchDevice", () => {
+  const d = {
+    name: "ming-pc",
+    dnsName: "ming-pc.mesh.example",
+    os: "windows",
+    ips: ["100.64.0.3", "fd7a:115c:a1e0::3"],
+  } as Device;
+  it("空查询全部命中", () => expect(matchDevice(d, "  ")).toBe(true));
+  it("按名称、IP、系统匹配，不分大小写", () => {
+    expect(matchDevice(d, "MING")).toBe(true);
+    expect(matchDevice(d, "100.64.0.3")).toBe(true);
+    expect(matchDevice(d, "win")).toBe(true);
+    expect(matchDevice(d, "linux")).toBe(false);
+  });
+  it("多个词需全部命中", () => {
+    expect(matchDevice(d, "ming windows")).toBe(true);
+    expect(matchDevice(d, "ming linux")).toBe(false);
   });
 });

@@ -100,6 +100,186 @@ pub async fn set_accept_routes(
     Ok(snapshot)
 }
 
+/// 选用出口设备（传设备 id），None 表示停用出口；执行后重新读取确认已生效
+#[tauri::command]
+pub async fn set_exit_node(
+    id: Option<String>,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<Snapshot, CliError> {
+    let target = match &id {
+        Some(id) => Some(monitor.exit_candidate(id).ok_or_else(|| CliError {
+            kind: ErrorKind::Failed,
+            message: "这台设备现在不能当出口，请刷新后再试".into(),
+            raw: id.clone(),
+        })?),
+        None => None,
+    };
+    let what = match &target {
+        Some((name, _)) => format!("选用出口 {name}"),
+        None => "停用出口".into(),
+    };
+    if let Err(e) = cli::set_exit_node(target.as_ref().map(|(_, ip)| ip.as_str())).await {
+        applog::error(format!("{what}失败：{}\n{}", e.message, e.raw));
+        return Err(e);
+    }
+    applog::info(format!("已执行{what}"));
+    let snapshot = monitor.refresh_reread(&app).await;
+    let actual = snapshot
+        .overview
+        .as_ref()
+        .and_then(|o| o.prefs.as_ref())
+        .map(|p| p.exit_node_id.clone());
+    if actual != Some(id.clone()) {
+        applog::error(format!("{what}后读取到出口为 {actual:?}"));
+        return Err(CliError {
+            kind: ErrorKind::Failed,
+            message: "已执行，但重新读取到的出口没有变化，请稍后刷新再看".into(),
+            raw: format!("期望 {id:?}，读取到 {actual:?}"),
+        });
+    }
+    Ok(snapshot)
+}
+
+/// 开关本机组网选项（出口时访问局域网、组网 DNS、挡住传入连接、无人登录时保持连接）
+#[tauri::command]
+pub async fn set_pref_switch(
+    switch: cli::PrefSwitch,
+    on: bool,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<Snapshot, CliError> {
+    let what = format!("{}“{}”", if on { "开启" } else { "关闭" }, switch.label());
+    if let Err(e) = cli::set_switch(switch, on).await {
+        applog::error(format!("{what}失败：{}\n{}", e.message, e.raw));
+        return Err(e);
+    }
+    applog::info(format!("已执行{what}"));
+    let snapshot = monitor.refresh_reread(&app).await;
+    let actual = snapshot
+        .overview
+        .as_ref()
+        .and_then(|o| o.prefs.as_ref())
+        .and_then(|p| switch.read(p));
+    if actual != Some(on) {
+        applog::error(format!("{what}后读取到 {actual:?}"));
+        return Err(CliError {
+            kind: ErrorKind::Failed,
+            message: "已执行，但重新读取到的设置没有变化，请稍后刷新再看".into(),
+            raw: format!("期望 {on}，读取到 {actual:?}"),
+        });
+    }
+    Ok(snapshot)
+}
+
+/// 发送文件的结果；用户取消选择时命令返回 None
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendResult {
+    device: String,
+    /// 发出的文件名（不含路径）
+    files: Vec<String>,
+}
+
+/// 弹出选文件对话框，把选中的文件用 Taildrop 发给设备。
+/// 文件路径只在后端取得，不经过前端
+#[tauri::command]
+pub async fn send_files(
+    id: String,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<Option<SendResult>, CliError> {
+    use tauri_plugin_dialog::DialogExt;
+    let (name, ip) = monitor.online_peer(&id).ok_or_else(|| CliError {
+        kind: ErrorKind::Failed,
+        message: "设备离线或已不在组网中，不能发送".into(),
+        raw: id.clone(),
+    })?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file().set_title(format!("选择要发给 {name} 的文件"));
+    if let Some(window) = app.get_webview_window("main") {
+        dialog = dialog.set_parent(&window);
+    }
+    dialog.pick_files(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let Some(picked) = rx.await.ok().flatten() else {
+        return Ok(None);
+    };
+    let files: Vec<std::path::PathBuf> = picked
+        .into_iter()
+        .filter_map(|f| f.into_path().ok())
+        .collect();
+    let names: Vec<String> = files
+        .iter()
+        .filter_map(|f| f.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .collect();
+    applog::info(format!("开始向 {name} 发送 {} 个文件", files.len()));
+    cli::send_files(&files, &ip).await.inspect_err(|e| {
+        applog::error(format!("向 {name} 发送文件失败：{}\n{}", e.message, e.raw))
+    })?;
+    applog::info(format!("已向 {name} 发送：{}", names.join("、")));
+    Ok(Some(SendResult {
+        device: name,
+        files: names,
+    }))
+}
+
+/// 本机当前的共享规则（tailscale serve）
+#[tauri::command]
+pub async fn get_serve_rules() -> Result<Vec<crate::model::ServeRule>, CliError> {
+    cli::serve_rules().await
+}
+
+/// 新增共享规则，返回新的规则列表
+#[tauri::command]
+pub async fn add_serve_rule(
+    kind: cli::ServeKind,
+    port: u16,
+    local_port: u16,
+) -> Result<Vec<crate::model::ServeRule>, CliError> {
+    let what = format!("共享本机端口 {local_port}（组网端口 {port}，{kind:?}）");
+    cli::serve_add(kind, port, local_port)
+        .await
+        .inspect_err(|e| applog::error(format!("{what}失败：{}\n{}", e.message, e.raw)))?;
+    applog::info(format!("已{what}"));
+    cli::serve_rules().await
+}
+
+/// 删除共享规则，返回新的规则列表
+#[tauri::command]
+pub async fn remove_serve_rule(
+    kind: String,
+    port: u16,
+) -> Result<Vec<crate::model::ServeRule>, CliError> {
+    cli::serve_remove(&kind, port).await.inspect_err(|e| {
+        applog::error(format!("停止共享 {kind} {port} 失败：{}\n{}", e.message, e.raw))
+    })?;
+    applog::info(format!("已停止共享 {kind} {port}"));
+    cli::serve_rules().await
+}
+
+/// 已登录的账户列表
+#[tauri::command]
+pub async fn get_profiles() -> Result<Vec<cli::Profile>, CliError> {
+    cli::profiles().await
+}
+
+/// 切换到另一个已登录的账户，返回切换后的快照。前端已做二次确认
+#[tauri::command]
+pub async fn switch_profile(
+    id: String,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<Snapshot, CliError> {
+    cli::switch_profile(&id)
+        .await
+        .inspect_err(|e| applog::error(format!("切换账户失败：{}\n{}", e.message, e.raw)))?;
+    applog::info(format!("已切换到账户 {id}"));
+    Ok(monitor.refresh_reread(&app).await)
+}
+
 /// 保存设置并立即生效：主题应用到窗口，开机自启同步到注册表
 #[tauri::command]
 pub fn save_settings(

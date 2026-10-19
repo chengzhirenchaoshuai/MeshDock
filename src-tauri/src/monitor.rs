@@ -4,7 +4,7 @@ use crate::cli::{self, CliError};
 use crate::gateway;
 use crate::history::{HistoryStore, Sample};
 use crate::launch;
-use crate::model::{Hostinfo, NetInfo, PeerStatus, Status, non_empty, time_ms};
+use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status, non_empty, time_ms};
 use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
 use crate::router::{self, RouterHealth};
 use crate::settings::{Settings, SettingsStore};
@@ -40,6 +40,10 @@ pub struct Device {
     pub key: Option<String>,
     /// ~/.ssh/config 中对应这台设备的别名，没有则不显示 SSH 按钮
     pub ssh_alias: Option<String>,
+    /// 这台设备可以当出口
+    pub exit_option: bool,
+    /// 本机正在用这台设备当出口
+    pub exit_active: bool,
 }
 
 /// 组网整体情况
@@ -53,6 +57,8 @@ pub struct Overview {
     pub peers: Vec<Device>,
     /// 本机 accept-routes 的实际值（读取 debug prefs）；读取失败为 None
     pub accept_routes: Option<bool>,
+    /// 本机的组网选项（出口、DNS、传入连接等）；读取失败为 None
+    pub prefs: Option<LocalPrefs>,
     /// 组网里发布了子网路由的设备
     pub subnet_routes: Vec<SubnetRoute>,
     /// 本机在不在家
@@ -61,6 +67,8 @@ pub struct Overview {
     pub rustdesk: bool,
     /// 子网路由器的健康状态
     pub routers: Vec<RouterHealth>,
+    /// 官方客户端有新版本时为新版本号
+    pub client_update: Option<String>,
 }
 
 /// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记
@@ -150,8 +158,12 @@ struct Inner {
     ssh_hosts: launch::SshHostsCache,
     /// 本机是否装了 RustDesk
     rustdesk: Ttl<bool>,
-    /// 本机 accept-routes 的实际值（只缓存读取成功的结果）
-    accept_routes: Ttl<Option<bool>>,
+    /// 本机的组网选项（只缓存读取成功的结果）
+    prefs: Ttl<LocalPrefs>,
+    /// 上一轮选用的出口设备是否离线，用于只在刚离线时发一次通知
+    exit_offline: Mutex<bool>,
+    /// 官方客户端的新版本号（后台定期检查）
+    client_update: Mutex<Option<String>>,
 }
 
 /// 带有效期的缓存值
@@ -195,8 +207,8 @@ impl<T: Clone> Ttl<T> {
 
 /// RustDesk 是否安装，多久重新检测一次
 const RUSTDESK_TTL: Duration = Duration::from_secs(60);
-/// accept-routes 多久重新读取一次。默认刷新间隔（10 秒）下每 3 轮读一次；
-/// 本程序切换模式、连接、断开后立即重新读取
+/// 本机组网选项多久重新读取一次。默认刷新间隔（10 秒）下每 3 轮读一次；
+/// 本程序切换模式、出口或其他选项、连接、断开后立即重新读取
 const PREFS_TTL: Duration = Duration::from_secs(30);
 
 /// netmap 中的网络检查结论：本机的，以及按节点公钥索引的各设备的
@@ -208,6 +220,10 @@ struct NetInfos {
     /// 节点公钥 → 设备的局域网 IPv4，用来对应 ~/.ssh/config 里写局域网地址的别名
     lan_ips: HashMap<String, Vec<String>>,
 }
+
+/// 启动后多久第一次检查官方客户端新版本，之后多久检查一次
+const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(60);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// 中继区域表读取失败后，多久再重试
 const REGIONS_RETRY: Duration = Duration::from_secs(60);
@@ -232,7 +248,9 @@ impl Monitor {
                 refreshing: tokio::sync::Mutex::new(()),
                 ssh_hosts: launch::SshHostsCache::default(),
                 rustdesk: Ttl::new(RUSTDESK_TTL),
-                accept_routes: Ttl::new(PREFS_TTL),
+                prefs: Ttl::new(PREFS_TTL),
+                exit_offline: Mutex::new(false),
+                client_update: Mutex::new(None),
             }),
         }
     }
@@ -256,6 +274,16 @@ impl Monitor {
                 }
             }
         });
+        // 官方客户端新版本：启动 1 分钟后检查，之后每 6 小时一次
+        let this = self.clone();
+        let update_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(UPDATE_FIRST_DELAY).await;
+            loop {
+                this.check_client_update(&update_app).await;
+                tokio::time::sleep(UPDATE_INTERVAL).await;
+            }
+        });
         // 延迟历史：启动 30 秒后开始，之后按设置的间隔测一次在线设备
         let this = self.clone();
         tauri::async_runtime::spawn(async move {
@@ -276,6 +304,32 @@ impl Monitor {
                 }
             }
         });
+    }
+
+    /// 检查官方客户端有没有新版本；发现新的版本号时发一次通知。查不到（如断网）时保持原结果
+    async fn check_client_update(&self, app: &AppHandle) {
+        let Ok(info) = cli::version_upstream().await else {
+            return;
+        };
+        let newer = info.newer_upstream();
+        let previous = std::mem::replace(
+            &mut *self.inner.client_update.lock().unwrap(),
+            newer.clone(),
+        );
+        let Some(v) = newer.filter(|v| previous.as_ref() != Some(v)) else {
+            return;
+        };
+        crate::applog::info(format!("Tailscale 官方客户端有新版本 {v}"));
+        if app.state::<SettingsStore>().get().notify
+            && let Err(e) = app
+                .notification()
+                .builder()
+                .title(format!("Tailscale 有新版本 {v}"))
+                .body("可在官方客户端的托盘菜单中更新，或到 tailscale.com 下载。")
+                .show()
+        {
+            crate::applog::error(format!("发送通知失败：{e}"));
+        }
     }
 
     /// 刷新或测速间隔改了：立即按新间隔重新计时
@@ -450,6 +504,23 @@ impl Monitor {
             .map(|d| d.id)
     }
 
+    /// 按设备 id 在最近的快照里找到设备
+    fn peer(&self, id: &str) -> Option<Device> {
+        self.latest()?.overview?.peers.into_iter().find(|d| d.id == id)
+    }
+
+    /// 按设备 id 找到可当出口的设备，返回名称和组网 IP
+    pub fn exit_candidate(&self, id: &str) -> Option<(String, String)> {
+        let d = self.peer(id).filter(|d| d.exit_option)?;
+        Some((d.name.clone(), d.main_ip()?))
+    }
+
+    /// 按设备 id 找到在线设备，返回名称和组网 IP（发送文件用）
+    pub fn online_peer(&self, id: &str) -> Option<(String, String)> {
+        let d = self.peer(id).filter(|d| d.conn.kind != ConnKind::Offline)?;
+        Some((d.name.clone(), d.main_ip()?))
+    }
+
     /// 测速结果是中继时补上原因：按 IP 在最近的快照里找到设备
     pub async fn explain_ping(&self, ip: &str, conn: Conn) -> Conn {
         if conn.kind != ConnKind::Relay {
@@ -493,6 +564,12 @@ impl Monitor {
                 messages.push((title, body));
             }
         }
+        if let Some(name) = self.exit_went_offline(overview) {
+            messages.push((
+                format!("出口设备 {name} 离线了"),
+                "本机的上网流量都经它转发，现在可能上不了网。打开 MeshDock 换一台出口或停用出口。".into(),
+            ));
+        }
         let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes);
         if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch) {
             let (title, body) = m.message();
@@ -508,18 +585,26 @@ impl Monitor {
         }
     }
 
-    /// accept-routes 的实际值：缓存未过期时直接用，否则读取 debug prefs；读取失败不缓存
-    async fn read_accept_routes(&self) -> Option<bool> {
-        if let Some(v) = self.inner.accept_routes.get() {
-            return v;
+    /// 选用的出口设备刚变成离线（或已不在列表里）时返回它的名字，持续离线不重复
+    fn exit_went_offline(&self, overview: &Overview) -> Option<String> {
+        let offline = exit_offline(overview.prefs.as_ref(), &overview.peers);
+        let mut last = self.inner.exit_offline.lock().unwrap();
+        let was = std::mem::replace(&mut *last, offline.is_some());
+        offline.filter(|_| !was)
+    }
+
+    /// 本机组网选项：缓存未过期时直接用，否则读取 debug prefs；读取失败不缓存
+    async fn read_prefs(&self) -> Option<LocalPrefs> {
+        if let Some(v) = self.inner.prefs.get() {
+            return Some(v);
         }
-        let v = cli::prefs().await.ok()?.route_all;
-        self.inner.accept_routes.set(v);
-        v
+        let v = LocalPrefs::from(cli::prefs().await.ok()?);
+        self.inner.prefs.set(v.clone());
+        Some(v)
     }
 
     fn invalidate_prefs(&self) {
-        self.inner.accept_routes.clear();
+        self.inner.prefs.clear();
     }
 
     /// 读取一次状态，保存快照、推给前端、更新托盘
@@ -527,7 +612,7 @@ impl Monitor {
         self.refresh_with(app, false).await
     }
 
-    /// 不用缓存、重新读取 accept-routes 后刷新（切换模式、连接、断开后调用）
+    /// 不用缓存、重新读取本机组网选项后刷新（切换模式、出口或其他选项、连接、断开后调用）
     pub async fn refresh_reread(&self, app: &AppHandle) -> Snapshot {
         self.refresh_with(app, true).await
     }
@@ -540,17 +625,18 @@ impl Monitor {
         }
         let regions = self.regions().await;
         // 状态和设置同时读取；设置读不到不影响设备列表
-        let (status, accept_routes) = tokio::join!(cli::status(), self.read_accept_routes());
+        let (status, prefs) = tokio::join!(cli::status(), self.read_prefs());
         // 状态读不到（如服务没运行）时不沿用缓存的模式，托盘也不勾选
-        let accept_routes = if status.is_ok() {
-            accept_routes
+        let prefs = if status.is_ok() {
+            prefs
         } else {
             self.invalidate_prefs();
             None
         };
+        let accept_routes = prefs.as_ref().and_then(|p| p.accept_routes);
         let snapshot = match status {
             Ok(status) => {
-                let mut overview = self.overview(&status, &regions, accept_routes);
+                let mut overview = self.overview(&status, &regions, prefs);
                 self.enrich(&mut overview).await;
                 let settings = app.state::<SettingsStore>().get();
                 overview.location = locate(&settings);
@@ -586,7 +672,7 @@ impl Monitor {
         &self,
         status: &Status,
         regions: &Regions,
-        accept_routes: Option<bool>,
+        prefs: Option<LocalPrefs>,
     ) -> Overview {
         let local = Arc::new(LocalNet::from_status(status));
         *self.inner.local.lock().unwrap() = local.clone();
@@ -596,11 +682,11 @@ impl Monitor {
             .filter_map(|p| {
                 let routes = p.primary_routes.clone().filter(|r| !r.is_empty())?;
                 Some(SubnetRoute {
-                    device: non_empty(&p.host_name).unwrap_or("未知设备").to_string(),
+                    device: p.display_name().unwrap_or("未知设备").to_string(),
                     routes,
                 })
             })
-            .collect();
+            .collect::<Vec<_>>();
         let peers = status.peers();
         self.track_active(&peers);
         let since = self.inner.active_since.lock().unwrap();
@@ -627,7 +713,13 @@ impl Monitor {
                 d.ssh_alias = launch::alias_for(&ssh_hosts, &candidates).map(str::to_string);
                 d
             })
-            .collect();
+            .collect::<Vec<_>>();
+        // 界面顺序：在线在前，其中子网路由器在前，再按名称
+        let mut peers = peers;
+        peers.sort_by_cached_key(|d| {
+            let router = subnet_routes.iter().any(|r| r.device == d.name);
+            peer_order(d.conn.kind == ConnKind::Offline, router, &d.name)
+        });
         Overview {
             backend_state: status.backend_state.clone(),
             control_unreachable: classify::control_unreachable(status),
@@ -637,11 +729,13 @@ impl Monitor {
                 .as_ref()
                 .map(|p| device(p, classify::self_conn())),
             peers,
-            accept_routes,
+            accept_routes: prefs.as_ref().and_then(|p| p.accept_routes),
+            prefs,
             subnet_routes,
             location: Location::default(),
             rustdesk: self.inner.rustdesk.get_or(launch::rustdesk_installed),
             routers: Vec::new(),
+            client_update: self.inner.client_update.lock().unwrap().clone(),
         }
     }
 
@@ -666,10 +760,21 @@ impl Monitor {
     }
 }
 
+impl Device {
+    /// 组网 IP，优先 IPv4
+    fn main_ip(&self) -> Option<String> {
+        self.ips
+            .iter()
+            .find(|a| !a.contains(':'))
+            .or(self.ips.first())
+            .cloned()
+    }
+}
+
 fn device(p: &PeerStatus, conn: Conn) -> Device {
     Device {
         id: p.id.clone().unwrap_or_default(),
-        name: non_empty(&p.host_name).unwrap_or("未知设备").to_string(),
+        name: p.display_name().unwrap_or("未知设备").to_string(),
         dns_name: non_empty(&p.dns_name).map(|s| s.trim_end_matches('.').to_string()),
         ips: p.tailscale_ips.clone().unwrap_or_default(),
         os: non_empty(&p.os).map(str::to_string),
@@ -681,7 +786,24 @@ fn device(p: &PeerStatus, conn: Conn) -> Device {
         last_handshake_ms: time_ms(p.last_handshake.as_deref()),
         key: p.public_key.clone(),
         ssh_alias: None,
+        exit_option: p.exit_node_option == Some(true),
+        exit_active: p.exit_node == Some(true),
     }
+}
+
+/// 选用的出口设备离线或已不在组网中时返回它的名字；没选出口返回 None
+fn exit_offline(prefs: Option<&LocalPrefs>, peers: &[Device]) -> Option<String> {
+    let id = prefs?.exit_node_id.as_ref()?;
+    match peers.iter().find(|d| &d.id == id) {
+        Some(d) => (d.conn.kind == ConnKind::Offline).then(|| d.name.clone()),
+        None => Some("（已不在组网中）".into()),
+    }
+}
+
+/// 设备卡片的排序键：在线的在前、离线的在后；在线里子网路由器在前；同组按名称（不分大小写）。
+/// 不按连接方式或延迟排，避免卡片随路径变化来回跳
+fn peer_order(offline: bool, router: bool, name: &str) -> (bool, bool, String) {
+    (offline, !router, name.to_lowercase())
 }
 
 /// 读取状态出错、恢复或错误类型变化时记入日志；状态不变时不重复记录
@@ -742,5 +864,56 @@ mod tests {
         let expired = Ttl::new(Duration::ZERO);
         expired.set(Some(true));
         assert_eq!(expired.get(), None);
+    }
+
+    fn dev(id: &str, kind: ConnKind) -> Device {
+        Device {
+            id: id.into(),
+            name: format!("{id}-名"),
+            dns_name: None,
+            ips: vec![],
+            os: None,
+            online: None,
+            conn: Conn { kind, label: String::new(), hint: None },
+            rx_bytes: None,
+            tx_bytes: None,
+            last_seen_ms: None,
+            last_handshake_ms: None,
+            key: None,
+            ssh_alias: None,
+            exit_option: true,
+            exit_active: false,
+        }
+    }
+
+    #[test]
+    fn 出口设备离线判断() {
+        let peers = [dev("a", ConnKind::Lan), dev("b", ConnKind::Offline)];
+        let pick = |id: Option<&str>| LocalPrefs {
+            exit_node_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        assert_eq!(exit_offline(None, &peers), None);
+        assert_eq!(exit_offline(Some(&pick(None)), &peers), None);
+        assert_eq!(exit_offline(Some(&pick(Some("a"))), &peers), None);
+        assert_eq!(exit_offline(Some(&pick(Some("b"))), &peers).as_deref(), Some("b-名"));
+        assert_eq!(
+            exit_offline(Some(&pick(Some("x"))), &peers).as_deref(),
+            Some("（已不在组网中）")
+        );
+    }
+
+    #[test]
+    fn 设备排序_在线在前_路由器在前_再按名称() {
+        let mut list = [
+            ("ming-pc", true, false),
+            ("peng-work", false, false),
+            ("Alpha", false, false),
+            ("phone-router", false, true),
+            ("box", true, false),
+        ];
+        list.sort_by_key(|&(name, offline, router)| peer_order(offline, router, name));
+        let names: Vec<_> = list.iter().map(|t| t.0).collect();
+        assert_eq!(names, ["phone-router", "Alpha", "peng-work", "box", "ming-pc"]);
     }
 }

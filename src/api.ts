@@ -34,7 +34,29 @@ export interface Device {
   lastHandshakeMs: number | null;
   /** ~/.ssh/config 中对应的别名；没有则不显示 SSH 按钮 */
   sshAlias: string | null;
+  /** 这台设备可以当出口 */
+  exitOption: boolean;
+  /** 本机正在用这台设备当出口 */
+  exitActive: boolean;
 }
+
+/** 本机的组网选项，各项为 null 表示读取不到 */
+export interface LocalPrefs {
+  acceptRoutes: boolean | null;
+  /** 选用的出口设备 id；null 表示不用出口 */
+  exitNodeId: string | null;
+  /** 走出口时仍可访问本地局域网 */
+  exitNodeAllowLan: boolean | null;
+  /** 使用组网 DNS（accept-dns） */
+  acceptDns: boolean | null;
+  /** 挡住所有传入连接（shields-up） */
+  shieldsUp: boolean | null;
+  /** 无人登录时保持连接（unattended） */
+  unattended: boolean | null;
+}
+
+/** 可在界面上开关的本机组网选项 */
+export type PrefSwitch = "exit-node-allow-lan" | "accept-dns" | "shields-up" | "unattended";
 
 export interface SubnetRoute {
   device: string;
@@ -58,12 +80,16 @@ export interface Overview {
   peers: Device[];
   /** 本机 accept-routes 实际值；读取失败为 null */
   acceptRoutes: boolean | null;
+  /** 本机的组网选项；读取失败为 null */
+  prefs: LocalPrefs | null;
   subnetRoutes: SubnetRoute[];
   location: Location;
   /** 本机是否装了 RustDesk */
   rustdesk: boolean;
   /** 子网路由器的健康状态 */
   routers: RouterHealth[];
+  /** 官方客户端有新版本时为新版本号 */
+  clientUpdate: string | null;
 }
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
@@ -172,6 +198,53 @@ export const getSettings = () => invoke<Settings>("get_settings");
 
 /** 切换在家（false）/ 出门（true）模式，返回切换后的快照 */
 export const setAcceptRoutes = (on: boolean) => invoke<Snapshot>("set_accept_routes", { on });
+
+/** 选用出口设备（传设备 id），null 表示停用，返回生效后的快照 */
+export const setExitNode = (id: string | null) => invoke<Snapshot>("set_exit_node", { id });
+/** 开关本机组网选项，返回生效后的快照 */
+export const setPrefSwitch = (pref: PrefSwitch, on: boolean) =>
+  invoke<Snapshot>("set_pref_switch", { switch: pref, on });
+
+export interface SendResult {
+  device: string;
+  /** 发出的文件名 */
+  files: string[];
+}
+/** 弹出选文件对话框并用 Taildrop 发给设备；取消选择时返回 null */
+export const sendFiles = (id: string) => invoke<SendResult | null>("send_files", { id });
+
+/** 共享方式：网页或任意 TCP（HTTPS 需要证书，Headscale 不支持） */
+export type ServeKind = "http" | "tcp";
+
+/** 一条共享规则（tailscale serve） */
+export interface ServeRule {
+  /** "http"、"https" 或 "tcp" */
+  kind: string;
+  /** 组网里对外的端口 */
+  port: number;
+  /** 转发目标 */
+  target: string;
+}
+export const getServeRules = () => invoke<ServeRule[]>("get_serve_rules");
+/** 新增规则，返回新的规则列表 */
+export const addServeRule = (kind: ServeKind, port: number, localPort: number) =>
+  invoke<ServeRule[]>("add_serve_rule", { kind, port, localPort });
+/** 删除规则，返回新的规则列表 */
+export const removeServeRule = (kind: string, port: number) =>
+  invoke<ServeRule[]>("remove_serve_rule", { kind, port });
+
+/** 已登录的一个账户 */
+export interface Profile {
+  id: string;
+  nickname: string;
+  /** 组网名；Headscale 下是控制端地址 */
+  tailnet: string;
+  account: string;
+  selected: boolean;
+}
+export const getProfiles = () => invoke<Profile[]>("get_profiles");
+/** 切换到另一个已登录的账户，调用前需二次确认 */
+export const switchProfile = (id: string) => invoke<Snapshot>("switch_profile", { id });
 
 /** 取走托盘发起的模式切换请求 */
 export const takeModeRequest = () => invoke<boolean | null>("take_mode_request");

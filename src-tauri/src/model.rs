@@ -48,6 +48,10 @@ pub struct PeerStatus {
     pub addrs: Option<Vec<String>>,
     /// 这台设备发布并已生效的子网路由，例如 phone-router 的 192.168.66.0/24
     pub primary_routes: Option<Vec<String>>,
+    /// 本机正在用这台设备当出口
+    pub exit_node: Option<bool>,
+    /// 这台设备可以当出口（已发布 0.0.0.0/0 且控制端已批准）
+    pub exit_node_option: Option<bool>,
 }
 
 /// `tailscale debug prefs`，只取用得到的字段
@@ -58,9 +62,167 @@ pub struct Prefs {
     pub control_url: Option<String>,
     /// 即 accept-routes
     pub route_all: Option<bool>,
+    /// 选用的出口设备（status 里的设备 ID），空字符串表示不用出口
     #[serde(rename = "ExitNodeID")]
     pub exit_node_id: Option<String>,
+    /// 走出口时仍可直接访问本机所在的局域网
+    #[serde(rename = "ExitNodeAllowLANAccess")]
+    pub exit_node_allow_lan_access: Option<bool>,
+    /// 即 accept-dns：使用组网下发的 DNS
+    #[serde(rename = "CorpDNS")]
+    pub corp_dns: Option<bool>,
+    /// 挡住所有传入连接（官方的“Allow incoming connections”取反）
+    pub shields_up: Option<bool>,
+    /// 即 unattended：没有用户登录时也保持连接
+    pub force_daemon: Option<bool>,
     pub want_running: Option<bool>,
+}
+
+/// 本机的组网选项，给前端展示用（字段为 None 表示读取不到）
+#[derive(serde::Serialize, Clone, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalPrefs {
+    pub accept_routes: Option<bool>,
+    /// 选用的出口设备 ID，None 表示不用出口
+    pub exit_node_id: Option<String>,
+    pub exit_node_allow_lan: Option<bool>,
+    pub accept_dns: Option<bool>,
+    pub shields_up: Option<bool>,
+    pub unattended: Option<bool>,
+}
+
+impl From<Prefs> for LocalPrefs {
+    fn from(p: Prefs) -> Self {
+        Self {
+            accept_routes: p.route_all,
+            exit_node_id: non_empty(&p.exit_node_id).map(str::to_string),
+            exit_node_allow_lan: p.exit_node_allow_lan_access,
+            accept_dns: p.corp_dns,
+            shields_up: p.shields_up,
+            unattended: p.force_daemon,
+        }
+    }
+}
+
+/// `tailscale version --upstream --json`
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "camelCase")]
+pub struct VersionInfo {
+    /// 本机版本，如 1.102.4
+    pub short: Option<String>,
+    /// 官方最新稳定版，如 1.104.1
+    pub upstream: Option<String>,
+}
+
+impl VersionInfo {
+    /// 官方有更新的版本时返回它
+    pub fn newer_upstream(&self) -> Option<String> {
+        let up = self.upstream.as_deref()?;
+        (version_key(up)? > version_key(self.short.as_deref()?)?).then(|| up.to_string())
+    }
+}
+
+/// "1.102.4" → (1, 102, 4)；格式不对时返回 None
+fn version_key(v: &str) -> Option<(u32, u32, u32)> {
+    let mut it = v.trim().split('.').map(|p| p.parse::<u32>().ok());
+    Some((it.next()??, it.next()??, it.next().flatten().unwrap_or(0)))
+}
+
+/// `tailscale serve status --json`：没有任何规则时是 `{}`
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct ServeStatus {
+    /// 对外端口 → 处理方式
+    #[serde(rename = "TCP")]
+    pub tcp: Option<HashMap<String, ServeTcp>>,
+    /// "主机名:端口" → 各路径的处理方式（HTTP / HTTPS 规则）
+    pub web: Option<HashMap<String, ServeWeb>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct ServeTcp {
+    /// TCP 转发的目标，如 "127.0.0.1:45999"
+    #[serde(rename = "TCPForward")]
+    pub tcp_forward: Option<String>,
+    #[serde(rename = "HTTP")]
+    pub http: Option<bool>,
+    #[serde(rename = "HTTPS")]
+    pub https: Option<bool>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct ServeWeb {
+    pub handlers: Option<HashMap<String, ServeHandler>>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(default, rename_all = "PascalCase")]
+pub struct ServeHandler {
+    pub proxy: Option<String>,
+    pub path: Option<String>,
+    pub text: Option<String>,
+}
+
+/// 一条共享规则，给前端展示用
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ServeRule {
+    /// "http"、"https" 或 "tcp"
+    pub kind: String,
+    /// 组网里对外的端口
+    pub port: u16,
+    /// 转发到哪里（本机地址、目录或文字）
+    pub target: String,
+}
+
+impl ServeStatus {
+    /// 整理成规则列表，按端口排序
+    pub fn rules(&self) -> Vec<ServeRule> {
+        let mut rules: Vec<ServeRule> = self
+            .tcp
+            .iter()
+            .flatten()
+            .filter_map(|(port, h)| {
+                let port: u16 = port.parse().ok()?;
+                let (kind, target) = if let Some(t) = non_empty(&h.tcp_forward) {
+                    ("tcp", t.to_string())
+                } else {
+                    let kind = if h.https == Some(true) { "https" } else { "http" };
+                    (kind, self.web_target(port).unwrap_or_default())
+                };
+                Some(ServeRule {
+                    kind: kind.into(),
+                    port,
+                    target,
+                })
+            })
+            .collect();
+        rules.sort_by_key(|r| r.port);
+        rules
+    }
+
+    /// 某个端口上 HTTP 规则的目标：各路径的目标，多个时用“；”连接
+    fn web_target(&self, port: u16) -> Option<String> {
+        let suffix = format!(":{port}");
+        let (_, web) = self.web.iter().flatten().find(|(k, _)| k.ends_with(&suffix))?;
+        let mut parts: Vec<String> = web
+            .handlers
+            .iter()
+            .flatten()
+            .map(|(path, h)| {
+                let to = non_empty(&h.proxy)
+                    .or(non_empty(&h.path))
+                    .map(str::to_string)
+                    .or_else(|| non_empty(&h.text).map(|_| "固定文字".into()))
+                    .unwrap_or_default();
+                if path == "/" { to } else { format!("{path} → {to}") }
+            })
+            .collect();
+        parts.sort();
+        Some(parts.join("；"))
+    }
 }
 
 /// `tailscale netcheck --format=json`
@@ -212,11 +374,23 @@ impl NetMap {
     }
 }
 
+impl PeerStatus {
+    /// 显示名：优先用控制端里的名字（MagicDNS 名第一段，在 Headscale 里改名后会跟着变），
+    /// 取不到再用设备自己上报的主机名
+    pub fn display_name(&self) -> Option<&str> {
+        self.dns_name
+            .as_deref()
+            .and_then(|d| d.split('.').next())
+            .filter(|n| !n.is_empty())
+            .or_else(|| self.host_name.as_deref().filter(|n| !n.is_empty()))
+    }
+}
+
 impl Status {
-    /// 对端设备列表（不含本机），按名称排序，保证界面顺序稳定
+    /// 对端设备列表（不含本机），按显示名排序，保证界面顺序稳定
     pub fn peers(&self) -> Vec<&PeerStatus> {
         let mut list: Vec<_> = self.peer.iter().flat_map(|m| m.values()).collect();
-        list.sort_by_key(|p| p.host_name.clone().unwrap_or_default().to_lowercase());
+        list.sort_by_key(|p| p.display_name().unwrap_or_default().to_lowercase());
         list
     }
 }
@@ -265,7 +439,8 @@ mod tests {
             .iter()
             .map(|p| p.host_name.clone().unwrap())
             .collect();
-        assert_eq!(names, ["ming-pc", "phone-router", "work-laptop"]);
+        // 按显示名排序：work-laptop 的显示名是 peng-work，排在 phone-router 前面
+        assert_eq!(names, ["ming-pc", "work-laptop", "phone-router"]);
     }
 
     #[test]
@@ -289,6 +464,19 @@ mod tests {
     fn 解析_prefs_和_derp_map() {
         let p: Prefs = serde_json::from_str(include_str!("../fixtures/prefs.json")).unwrap();
         assert_eq!(p.route_all, Some(false));
+        let l = LocalPrefs::from(p);
+        // 实机未选出口：ExitNodeID 为空字符串，转成 None
+        assert_eq!(
+            l,
+            LocalPrefs {
+                accept_routes: Some(false),
+                exit_node_id: None,
+                exit_node_allow_lan: Some(false),
+                accept_dns: Some(false),
+                shields_up: Some(false),
+                unattended: Some(true),
+            }
+        );
         let d: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
         let regions = d.regions.unwrap();
         assert_eq!(regions.len(), 29);
@@ -316,6 +504,42 @@ mod tests {
     }
 
     #[test]
+    fn 解析共享规则() {
+        // 2026-10-19 实机输出：先后加了 TCP 45999 和 HTTP 45998（主机名已替换）
+        let s: ServeStatus = serde_json::from_str(
+            r#"{"TCP":{"45999":{"TCPForward":"127.0.0.1:45999"},"45998":{"HTTP":true}},
+                "Web":{"peng-home.example.com:45998":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:45998"}}}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.rules(),
+            [
+                ServeRule { kind: "http".into(), port: 45998, target: "http://127.0.0.1:45998".into() },
+                ServeRule { kind: "tcp".into(), port: 45999, target: "127.0.0.1:45999".into() },
+            ]
+        );
+        let empty: ServeStatus = serde_json::from_str("{}").unwrap();
+        assert!(empty.rules().is_empty());
+    }
+
+    #[test]
+    fn 比较官方新版本() {
+        // 2026-10-19 实机输出（节选）
+        let v: VersionInfo = serde_json::from_str(
+            r#"{"majorMinorPatch":"1.102.4","short":"1.102.4","cap":142,"upstream":"1.104.1"}"#,
+        )
+        .unwrap();
+        assert_eq!(v.newer_upstream().as_deref(), Some("1.104.1"));
+        let same = VersionInfo { short: Some("1.104.1".into()), upstream: Some("1.104.1".into()) };
+        assert_eq!(same.newer_upstream(), None);
+        // 按数字比较，不按字符串：1.99 比 1.102 旧
+        let old = VersionInfo { short: Some("1.102.0".into()), upstream: Some("1.99.9".into()) };
+        assert_eq!(old.newer_upstream(), None);
+        let bad = VersionInfo { short: Some("1.102.4".into()), upstream: Some("".into()) };
+        assert_eq!(bad.newer_upstream(), None);
+    }
+
+    #[test]
     fn 时间零值视为无() {
         assert_eq!(time_ms(Some("0001-01-01T00:00:00Z")), None);
         assert_eq!(time_ms(Some("")), None);
@@ -339,5 +563,16 @@ mod tests {
         let lan = m.peer_lan_ips();
         assert_eq!(lan.get("k1"), Some(&vec!["192.168.66.80".to_string()]));
         assert_eq!(lan.len(), 1);
+    }
+
+    #[test]
+    fn 显示名优先用控制端的名字() {
+        let s: Status = serde_json::from_str(STATUS).unwrap();
+        let names: Vec<_> = s.peers().iter().map(|p| p.display_name().unwrap()).collect();
+        // work-laptop 在 Headscale 里改名为 peng-work，排序也按新名字
+        assert_eq!(names, ["ming-pc", "peng-work", "phone-router"]);
+        let bare = PeerStatus { host_name: Some("box".into()), dns_name: Some("".into()), ..Default::default() };
+        assert_eq!(bare.display_name(), Some("box"));
+        assert_eq!(PeerStatus::default().display_name(), None);
     }
 }
