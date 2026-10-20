@@ -147,3 +147,34 @@ export function matchDevice(d: Device, query: string, note = ""): boolean {
   const text = [d.name, d.dnsName ?? "", d.os ?? "", note, ...d.ips].join(" ").toLowerCase();
   return words.every((w) => text.includes(w));
 }
+
+/** 一段延迟历史的统计；没有回应的测量只计入 timeouts */
+export interface LatencyStats {
+  /** 测量总次数（含没有回应的） */
+  count: number;
+  timeouts: number;
+  /** 以下各项在没有任何回应时为 null */
+  min: number | null;
+  median: number | null;
+  /** 95% 的测量不超过这个值 */
+  p95: number | null;
+  max: number | null;
+  /** 有回应的测量中走中继的比例（0～1） */
+  relayRatio: number | null;
+}
+
+export function latencyStats(samples: Sample[]): LatencyStats {
+  const ok = samples.filter((s) => s.ms != null);
+  const sorted = ok.map((s) => s.ms!).sort((a, b) => a - b);
+  const n = sorted.length;
+  const relay = ok.filter((s) => s.kind === "relay" || s.kind === "peer-relay").length;
+  return {
+    count: samples.length,
+    timeouts: samples.length - n,
+    min: n ? sorted[0] : null,
+    median: n ? sorted[Math.floor(n / 2)] : null,
+    p95: n ? sorted[Math.ceil(n * 0.95) - 1] : null,
+    max: n ? sorted[n - 1] : null,
+    relayRatio: n ? relay / n : null,
+  };
+}

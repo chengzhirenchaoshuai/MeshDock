@@ -53,6 +53,8 @@ const emit = defineEmits<{
   send: [];
   favorite: [on: boolean];
   remark: [text: string];
+  /** 打开延迟历史详情 */
+  history: [];
 }>();
 
 // ---------- 备注：点击进入编辑，回车或离开输入框保存，Esc 放弃 ----------
@@ -296,7 +298,18 @@ ${pingLine.raw}` : pingLine.text"
 
     <!-- 24 小时延迟历史（本机没有） -->
     <template v-if="!isSelf">
-      <LatencyChart v-if="history?.length" :samples="history" :now="now" />
+      <!-- 点击小图查看 24 小时 / 7 天详情 -->
+      <div
+        v-if="history?.length"
+        role="button"
+        tabindex="0"
+        class="-mx-1 cursor-pointer rounded-ctl px-1 py-0.5 transition-colors hover:bg-subtle"
+        title="点击查看详情：24 小时 / 7 天大图、统计，可导出 CSV"
+        @click="emit('history')"
+        @keydown.enter="emit('history')"
+      >
+        <LatencyChart :samples="history" :now="now" />
+      </div>
       <p v-else class="text-[11px] text-faint">还没有延迟历史，程序运行时会按设置的间隔自动测速</p>
     </template>
 

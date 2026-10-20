@@ -2,7 +2,7 @@
 use super::{Monitor, now_ms};
 use crate::classify::ConnKind;
 use crate::cli;
-use crate::history::{HistoryStore, Sample};
+use crate::history::{DAY_MS, HistoryStore, Sample};
 use crate::notify::LATENCY_STREAK;
 use crate::settings::SettingsStore;
 use std::collections::HashMap;
@@ -20,7 +20,7 @@ pub fn record_history(app: &AppHandle, samples: Vec<(String, Sample)>) {
     }
     let store = app.state::<HistoryStore>();
     store.add(samples, now_ms());
-    let _ = app.emit(HISTORY_EVENT, store.get());
+    let _ = app.emit(HISTORY_EVENT, store.recent(now_ms() - DAY_MS));
 }
 
 /// 启动后多久第一次检查官方客户端新版本（留几秒给开机时的网络），之后多久检查一次

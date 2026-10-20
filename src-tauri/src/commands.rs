@@ -2,7 +2,7 @@
 use crate::applog;
 use crate::classify::PingResult;
 use crate::cli::{self, CliError, ErrorKind};
-use crate::history::{History, HistoryStore, Sample};
+use crate::history::{DAY_MS, History, HistoryStore, Sample};
 use crate::monitor::{Monitor, Snapshot};
 use crate::netcheck::{self, Report};
 use crate::paths::AppPaths;
@@ -51,10 +51,57 @@ pub async fn ping(
     Ok(result)
 }
 
-/// 全部设备最近 24 小时的延迟历史
+/// 全部设备最近 24 小时的延迟历史（设备卡片的小图）
 #[tauri::command]
 pub fn get_history(store: State<'_, HistoryStore>) -> History {
-    store.get()
+    store.recent(crate::monitor::now_ms() - DAY_MS)
+}
+
+/// 一台设备最近 7 天的延迟历史（详情弹窗用）
+#[tauri::command]
+pub fn get_device_history(id: String, store: State<'_, HistoryStore>) -> Vec<Sample> {
+    store.device(&id)
+}
+
+/// 把一台设备最近 7 天的延迟历史导出成 CSV，保存到“下载”文件夹并在资源管理器中选中，返回文件路径
+#[tauri::command]
+pub fn export_history(
+    id: String,
+    app: AppHandle,
+    store: State<'_, HistoryStore>,
+    monitor: State<'_, Monitor>,
+) -> Result<String, String> {
+    use tauri_plugin_opener::OpenerExt;
+    let samples = store.device(&id);
+    if samples.is_empty() {
+        return Err("这台设备还没有延迟历史".into());
+    }
+    let csv = crate::history::to_csv(&samples, |ms| {
+        chrono::DateTime::from_timestamp_millis(ms)
+            .map(|t| t.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_default()
+    });
+    // 文件名用设备名，去掉 Windows 文件名不允许的字符
+    let name: String = monitor
+        .device_name(&id)
+        .unwrap_or(id)
+        .chars()
+        .map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c })
+        .collect();
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("找不到下载文件夹：{e}"))?;
+    let path = dir.join(format!(
+        "MeshDock延迟历史-{name}-{}.csv",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    ));
+    std::fs::write(&path, csv).map_err(|e| {
+        applog::error(format!("导出延迟历史失败：{e}"));
+        format!("保存失败：{e}")
+    })?;
+    let _ = app.opener().reveal_item_in_dir(&path);
+    Ok(path.display().to_string())
 }
 
 /// 本机网络体检，约 4 秒

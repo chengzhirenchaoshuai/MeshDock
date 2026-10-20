@@ -9,6 +9,7 @@ import {
   matchDevice,
   formatUptime,
   kindLabel,
+  latencyStats,
   measureLine,
   timeAgo,
   usageTone,
@@ -163,5 +164,30 @@ describe("matchDevice", () => {
   it("多个词需全部命中", () => {
     expect(matchDevice(d, "ming windows")).toBe(true);
     expect(matchDevice(d, "ming linux")).toBe(false);
+  });
+});
+
+describe("latencyStats", () => {
+  const s = (ms: number | null, kind: Sample["kind"] = "lan"): Sample => ({ atMs: 0, ms, kind: ms == null ? null : kind });
+  it("没有测量时各项为空", () => {
+    expect(latencyStats([])).toEqual({
+      count: 0,
+      timeouts: 0,
+      min: null,
+      median: null,
+      p95: null,
+      max: null,
+      relayRatio: null,
+    });
+  });
+  it("没有回应只计入次数，中继比例只看有回应的", () => {
+    const list = [s(5), s(1), s(null), s(40, "relay"), ...Array.from({ length: 16 }, () => s(2))];
+    const r = latencyStats(list);
+    expect(r.count).toBe(20);
+    expect(r.timeouts).toBe(1);
+    expect([r.min, r.median, r.max]).toEqual([1, 2, 40]);
+    // 19 个有回应的测量：95% 位置是第 19 个，即最大值
+    expect(r.p95).toBe(40);
+    expect(r.relayRatio).toBeCloseTo(1 / 19);
   });
 });

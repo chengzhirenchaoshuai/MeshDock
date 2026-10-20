@@ -108,6 +108,8 @@ pub fn run() {
             commands::refresh,
             commands::ping,
             commands::get_history,
+            commands::get_device_history,
+            commands::export_history,
             commands::build_report,
             commands::save_report,
             commands::connect,

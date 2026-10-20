@@ -330,6 +330,10 @@ export interface Sample {
 export type History = Record<string, Sample[]>;
 
 export const getHistory = () => invoke<History>("get_history");
+/** 一台设备最近 7 天的延迟历史（详情弹窗用） */
+export const getDeviceHistory = (id: string) => invoke<Sample[]>("get_device_history", { id });
+/** 导出一台设备最近 7 天的延迟历史为 CSV，保存到“下载”文件夹，返回文件路径 */
+export const exportHistory = (id: string) => invoke<string>("export_history", { id });
 export const onHistory = (cb: (h: History) => void): Promise<UnlistenFn> =>
   listen<History>("history", (e) => cb(e.payload));
 

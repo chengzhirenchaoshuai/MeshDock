@@ -5,6 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Device, History, PingRecord } from "../api";
 import { arrangePeers, isFiltering, type PeerFilter, type PeerMarks } from "../devices";
 import DeviceCard from "./DeviceCard.vue";
+import HistoryDialog from "./HistoryDialog.vue";
 
 /** 组网设备列表：标题栏带搜索和“只看在线”，下面是设备卡片 */
 const props = defineProps<{
@@ -38,6 +39,10 @@ const emit = defineEmits<{
 
 const filter = ref<PeerFilter>({ query: "", onlineOnly: false });
 const shown = computed(() => arrangePeers(props.peers, filter.value, props.marks));
+
+/** 正在看延迟历史详情的设备 */
+const detailId = ref<string | null>(null);
+const detail = computed(() => props.peers.find((d) => d.id === detailId.value) ?? null);
 
 function setFavorite(id: string, on: boolean) {
   const rest = props.marks.favorites.filter((f) => f !== id);
@@ -143,6 +148,7 @@ onUnmounted(() => unlisten?.());
         :remark="marks.notes[d.id]"
         @favorite="setFavorite(d.id, $event)"
         @remark="setRemark(d.id, $event)"
+        @history="detailId = d.id"
         @copy="emit('copy', $event)"
         @test="emit('test', d)"
         @ssh="emit('ssh', $event)"
@@ -150,5 +156,15 @@ onUnmounted(() => unlisten?.());
         @send="emit('send', d.id)"
       />
     </div>
+    <!-- 弹窗挂到 body 上：列表在组网断开时会被调暗、禁止点击，不能影响弹窗 -->
+    <Teleport to="body">
+      <HistoryDialog
+        v-if="detail"
+        :device="detail"
+        :now="now"
+        :recent="history[detail.id]"
+        @close="detailId = null"
+      />
+    </Teleport>
   </section>
 </template>

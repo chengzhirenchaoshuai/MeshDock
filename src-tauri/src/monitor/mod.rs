@@ -323,6 +323,11 @@ impl Monitor {
         self.latest()?.overview?.peers.into_iter().find(|d| d.id == id)
     }
 
+    /// 按设备 id 找到设备名称（导出文件命名用）
+    pub fn device_name(&self, id: &str) -> Option<String> {
+        self.peer(id).map(|d| d.name)
+    }
+
     /// 按设备 id 找到可当出口的设备，返回名称和组网 IP
     pub fn exit_candidate(&self, id: &str) -> Option<(String, String)> {
         let d = self.peer(id).filter(|d| d.exit_option)?;
