@@ -107,6 +107,15 @@ pub async fn set_exit_node(
     app: AppHandle,
     monitor: State<'_, Monitor>,
 ) -> Result<Snapshot, CliError> {
+    apply_exit_node(&app, &monitor, id).await.map(|(_, s)| s)
+}
+
+/// 选用或停用出口（界面和托盘菜单共用），成功时返回给用户看的结果和新快照
+pub async fn apply_exit_node(
+    app: &AppHandle,
+    monitor: &Monitor,
+    id: Option<String>,
+) -> Result<(String, Snapshot), CliError> {
     let target = match &id {
         Some(id) => Some(monitor.exit_candidate(id).ok_or_else(|| CliError {
             kind: ErrorKind::Failed,
@@ -115,16 +124,16 @@ pub async fn set_exit_node(
         })?),
         None => None,
     };
-    let what = match &target {
-        Some((name, _)) => format!("选用出口 {name}"),
-        None => "停用出口".into(),
+    let (what, done) = match &target {
+        Some((name, _)) => (format!("选用出口 {name}"), format!("已改为经 {name} 上网")),
+        None => ("停用出口".to_string(), "已停用出口".to_string()),
     };
     if let Err(e) = cli::set_exit_node(target.as_ref().map(|(_, ip)| ip.as_str())).await {
         applog::error(format!("{what}失败：{}\n{}", e.message, e.raw));
         return Err(e);
     }
     applog::info(format!("已执行{what}"));
-    let snapshot = monitor.refresh_reread(&app).await;
+    let snapshot = monitor.refresh_reread(app).await;
     let actual = snapshot
         .overview
         .as_ref()
@@ -138,7 +147,7 @@ pub async fn set_exit_node(
             raw: format!("期望 {id:?}，读取到 {actual:?}"),
         });
     }
-    Ok(snapshot)
+    Ok((done, snapshot))
 }
 
 /// 开关本机组网选项（出口时访问局域网、组网 DNS、挡住传入连接、无人登录时保持连接）

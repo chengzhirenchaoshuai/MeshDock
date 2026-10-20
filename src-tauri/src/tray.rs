@@ -1,13 +1,15 @@
 //! 托盘：图标右下角的圆点反映整体状态；左键单击打开主界面，右键弹出中文菜单
-use crate::monitor::Monitor;
+use crate::classify::ConnKind;
+use crate::monitor::{Monitor, Overview};
 use crate::window;
 use std::sync::Mutex;
 use tauri::{
     AppHandle, Emitter, Manager, Wry,
     image::Image,
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
+use tauri_plugin_notification::NotificationExt;
 
 const TRAY_ID: &str = "main";
 
@@ -20,6 +22,28 @@ struct ModeItems {
     away: CheckMenuItem<Wry>,
     current: Mutex<Option<bool>>,
 }
+
+/// 快捷操作子菜单里的一项（出口节点、SSH 连接）
+#[derive(Clone, Debug, PartialEq)]
+struct QuickItem {
+    id: String,
+    text: String,
+    enabled: bool,
+    /// None 为普通菜单项，Some 为带勾选的菜单项
+    checked: Option<bool>,
+}
+
+/// 托盘里的两个快捷操作子菜单，以及上次生成时的内容（内容不变就不重建，避免每轮刷新都重建菜单）
+struct QuickMenus {
+    exit: Submenu<Wry>,
+    ssh: Submenu<Wry>,
+    last: Mutex<Option<(Vec<QuickItem>, Vec<QuickItem>)>>,
+}
+
+/// 菜单项 id 前缀：后面接设备 id 或 SSH 别名
+const EXIT_PREFIX: &str = "exit:";
+const EXIT_NONE: &str = "exit-none";
+const SSH_PREFIX: &str = "ssh:";
 
 /// 托盘发起、等待前端确认的模式切换：Some(true) 表示请求切到出门模式。
 /// 窗口可能刚被创建、还没来得及监听事件，所以先存起来，由前端主动取走
@@ -101,7 +125,16 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "mode-home" => request_mode(app, false),
             "mode-away" => request_mode(app, true),
-            _ => {}
+            EXIT_NONE => pick_exit(app, None),
+            id => {
+                if let Some(dev) = id.strip_prefix(EXIT_PREFIX) {
+                    pick_exit(app, Some(dev.to_string()));
+                } else if let Some(alias) = id.strip_prefix(SSH_PREFIX)
+                    && let Err(e) = crate::launch::open_ssh(alias)
+                {
+                    show_notice(app, "打开 SSH 失败", &e);
+                }
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -139,6 +172,148 @@ pub fn set_mode(app: &AppHandle, accept_routes: Option<bool>) {
     *items.current.lock().unwrap() = accept_routes;
     let _ = items.home.set_checked(accept_routes == Some(false));
     let _ = items.away.set_checked(accept_routes == Some(true));
+}
+
+/// 按最新的组网概况更新“出口节点”“SSH 连接”子菜单；概况读不到或组网没在运行时禁用
+pub fn set_quick(app: &AppHandle, overview: Option<&Overview>) {
+    let Some(menus) = app.try_state::<QuickMenus>() else {
+        return;
+    };
+    let running = overview.filter(|o| o.backend_state.as_deref() == Some("Running"));
+    let next = (exit_items(running), ssh_items(running));
+    let mut last = menus.last.lock().unwrap();
+    if last.as_ref() == Some(&next) {
+        return;
+    }
+    let exit_text = if running.is_some() && next.0.is_empty() {
+        "出口节点（组网里没有设备提供）"
+    } else {
+        "出口节点"
+    };
+    let ssh_text = if running.is_some() && next.1.is_empty() {
+        "SSH 连接（ssh 配置里没有对应的设备）"
+    } else {
+        "SSH 连接"
+    };
+    if let Err(e) = fill(app, &menus.exit, exit_text, &next.0)
+        .and_then(|_| fill(app, &menus.ssh, ssh_text, &next.1))
+    {
+        crate::applog::error(format!("更新托盘菜单失败：{e}"));
+        return;
+    }
+    *last = Some(next);
+}
+
+/// 清空子菜单后按 items 重新填充；没有内容时禁用整个子菜单
+fn fill(app: &AppHandle, menu: &Submenu<Wry>, text: &str, items: &[QuickItem]) -> tauri::Result<()> {
+    while menu.remove_at(0)?.is_some() {}
+    for item in items {
+        // Windows 菜单把 & 当作快捷键标记，名称里的 & 要写成 &&
+        let label = item.text.replace('&', "&&");
+        match item.checked {
+            Some(checked) => menu.append(&CheckMenuItem::with_id(
+                app,
+                &item.id,
+                label,
+                item.enabled,
+                checked,
+                None::<&str>,
+            )?)?,
+            None => menu.append(&MenuItem::with_id(
+                app,
+                &item.id,
+                label,
+                item.enabled,
+                None::<&str>,
+            )?)?,
+        }
+    }
+    menu.set_text(text)?;
+    menu.set_enabled(!items.is_empty())
+}
+
+/// 出口节点子菜单：“不使用出口”加上每台能当出口的设备，勾选当前选用的；离线的设备置灰
+fn exit_items(overview: Option<&Overview>) -> Vec<QuickItem> {
+    let Some(o) = overview else {
+        return Vec::new();
+    };
+    let options: Vec<_> = o.peers.iter().filter(|d| d.exit_option).collect();
+    if options.is_empty() {
+        return Vec::new();
+    }
+    // 读不到组网选项时不勾选任何一项
+    let current = o.prefs.as_ref().map(|p| p.exit_node_id.as_deref());
+    let mut items = vec![QuickItem {
+        id: EXIT_NONE.into(),
+        text: "不使用出口".into(),
+        enabled: true,
+        checked: Some(current == Some(None)),
+    }];
+    items.extend(options.into_iter().map(|d| {
+        let offline = d.conn.kind == ConnKind::Offline;
+        QuickItem {
+            id: format!("{EXIT_PREFIX}{}", d.id),
+            text: if offline {
+                format!("{}（离线）", d.name)
+            } else {
+                d.name.clone()
+            },
+            enabled: !offline,
+            checked: Some(current == Some(Some(d.id.as_str()))),
+        }
+    }));
+    items
+}
+
+/// SSH 连接子菜单：ssh 配置里有别名的设备，离线的置灰
+fn ssh_items(overview: Option<&Overview>) -> Vec<QuickItem> {
+    let Some(o) = overview else {
+        return Vec::new();
+    };
+    o.peers
+        .iter()
+        .filter_map(|d| {
+            let alias = d.ssh_alias.as_ref()?;
+            let offline = d.conn.kind == ConnKind::Offline;
+            Some(QuickItem {
+                id: format!("{SSH_PREFIX}{alias}"),
+                text: format!("{}（ssh {alias}）{}", d.name, if offline { "离线" } else { "" }),
+                enabled: !offline,
+                checked: None,
+            })
+        })
+        .collect()
+}
+
+/// 托盘选了出口：点击会自动改变勾选，先按实际值改回，再在后台执行，结果用通知告知
+fn pick_exit(app: &AppHandle, id: Option<String>) {
+    if let Some(menus) = app.try_state::<QuickMenus>() {
+        *menus.last.lock().unwrap() = None;
+    }
+    let monitor = app.state::<Monitor>().inner().clone();
+    let overview = monitor.latest().and_then(|s| s.overview);
+    set_quick(app, overview.as_ref());
+    let current = overview
+        .as_ref()
+        .and_then(|o| o.prefs.as_ref())
+        .map(|p| p.exit_node_id.clone());
+    if current == Some(id.clone()) {
+        return; // 已经是这个选择
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match crate::commands::apply_exit_node(&app, &monitor, id).await {
+            Ok((done, _)) => show_notice(&app, &done, "可在 MeshDock 设备页的“出口节点”中查看。"),
+            Err(e) => show_notice(&app, "切换出口失败", &e.message),
+        }
+    });
+}
+
+/// 托盘操作的结果：主窗口可能没打开，用 Windows 通知告知（是用户主动操作的反馈，不受通知开关影响）
+fn show_notice(app: &AppHandle, title: &str, body: &str) {
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
+        crate::applog::error(format!("发送通知失败：{e}"));
+    }
 }
 
 /// 托盘点了某个模式：先把勾选改回实际值，再打开主界面由用户确认
@@ -185,6 +360,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         home,
         away,
         current: Mutex::new(None),
+    });
+    // 快捷操作：内容由 set_quick 按每轮刷新的结果填充，拿到状态前禁用
+    let exit = Submenu::with_id(app, "exit-menu", "出口节点", false)?;
+    let ssh = Submenu::with_id(app, "ssh-menu", "SSH 连接", false)?;
+    menu.append(&exit)?;
+    menu.append(&ssh)?;
+    app.manage(QuickMenus {
+        exit,
+        ssh,
+        last: Mutex::new(None),
     });
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?)?;
@@ -305,6 +490,88 @@ mod tests {
         // 2×1：左边不透明红色，右边全透明黑色 → 1×1 应为半透明的红色，而不是暗红
         let base = vec![255, 0, 0, 255, 0, 0, 0, 0];
         assert_eq!(downscale(&base, 2, 1, 1, 1), vec![255, 0, 0, 128]);
+    }
+
+    fn dev(id: &str, kind: ConnKind, exit: bool, alias: Option<&str>) -> crate::monitor::Device {
+        crate::monitor::Device {
+            id: id.into(),
+            name: format!("{id}-名"),
+            dns_name: None,
+            ips: vec![],
+            os: None,
+            online: None,
+            conn: crate::classify::Conn { kind, label: String::new(), hint: None },
+            rx_bytes: None,
+            tx_bytes: None,
+            last_seen_ms: None,
+            last_handshake_ms: None,
+            key: None,
+            ssh_alias: alias.map(str::to_string),
+            exit_option: exit,
+            exit_active: false,
+        }
+    }
+
+    fn overview(peers: Vec<crate::monitor::Device>, exit: Option<Option<&str>>) -> Overview {
+        Overview {
+            backend_state: Some("Running".into()),
+            control_unreachable: false,
+            version: None,
+            self_device: None,
+            peers,
+            accept_routes: None,
+            prefs: exit.map(|id| crate::model::LocalPrefs {
+                exit_node_id: id.map(str::to_string),
+                ..Default::default()
+            }),
+            subnet_routes: vec![],
+            location: Default::default(),
+            rustdesk: false,
+            routers: vec![],
+            client_update: None,
+        }
+    }
+
+    #[test]
+    fn 出口子菜单_勾选当前出口_离线置灰() {
+        let peers = vec![
+            dev("a", ConnKind::Lan, true, None),
+            dev("b", ConnKind::Offline, true, None),
+            dev("c", ConnKind::Lan, false, None),
+        ];
+        let items = exit_items(Some(&overview(peers.clone(), Some(Some("a")))));
+        let brief: Vec<_> = items
+            .iter()
+            .map(|i| (i.id.as_str(), i.enabled, i.checked))
+            .collect();
+        assert_eq!(
+            brief,
+            [
+                ("exit-none", true, Some(false)),
+                ("exit:a", true, Some(true)),
+                ("exit:b", false, Some(false)),
+            ]
+        );
+        assert_eq!(items[2].text, "b-名（离线）");
+        // 没用出口时勾“不使用出口”；读不到组网选项时都不勾
+        assert_eq!(exit_items(Some(&overview(peers.clone(), Some(None))))[0].checked, Some(true));
+        assert!(exit_items(Some(&overview(peers, None))).iter().all(|i| i.checked == Some(false)));
+        // 没有设备能当出口时整个子菜单为空
+        assert!(exit_items(Some(&overview(vec![dev("c", ConnKind::Lan, false, None)], None))).is_empty());
+    }
+
+    #[test]
+    fn ssh_子菜单只列有别名的设备() {
+        let peers = vec![
+            dev("a", ConnKind::Lan, false, Some("ming")),
+            dev("b", ConnKind::Offline, false, Some("box")),
+            dev("c", ConnKind::Lan, false, None),
+        ];
+        let items = ssh_items(Some(&overview(peers, None)));
+        let brief: Vec<_> = items.iter().map(|i| (i.id.as_str(), i.enabled)).collect();
+        assert_eq!(brief, [("ssh:ming", true), ("ssh:box", false)]);
+        assert_eq!(items[1].text, "b-名（ssh box）离线");
+        assert!(ssh_items(None).is_empty());
     }
 
     #[test]

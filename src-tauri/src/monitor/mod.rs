@@ -414,6 +414,7 @@ impl Monitor {
         };
         tray::set_state(app, tray_state(&snapshot));
         tray::set_mode(app, accept_routes);
+        tray::set_quick(app, snapshot.overview.as_ref());
         let previous = self.inner.latest.lock().unwrap().replace(snapshot.clone());
         log_error_change(previous.as_ref(), &snapshot);
         let _ = app.emit(SNAPSHOT_EVENT, &snapshot);
