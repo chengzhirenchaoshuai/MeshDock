@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Network, Search } from "@lucide/vue";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Device, History, PingRecord } from "../api";
-import { filterPeers, isFiltering, type PeerFilter } from "../devices";
+import { arrangePeers, isFiltering, type PeerFilter, type PeerMarks } from "../devices";
 import DeviceCard from "./DeviceCard.vue";
 
 /** 组网设备列表：标题栏带搜索和“只看在线”，下面是设备卡片 */
@@ -19,6 +19,8 @@ const props = defineProps<{
   sending: Set<string>;
   /** 组网断开：列表是断开前的旧信息，调暗并禁止操作 */
   disabled: boolean;
+  /** 本机给设备加的备注和收藏 */
+  marks: PeerMarks;
 }>();
 const emit = defineEmits<{
   copy: [ip: string];
@@ -30,10 +32,24 @@ const emit = defineEmits<{
   drop: [id: string];
   /** 文件拖到了列表里，但没落在在线设备的卡片上 */
   dropMiss: [];
+  /** 备注或收藏改了：带回新的备注和收藏 */
+  marks: [marks: PeerMarks];
 }>();
 
 const filter = ref<PeerFilter>({ query: "", onlineOnly: false });
-const shown = computed(() => filterPeers(props.peers, filter.value));
+const shown = computed(() => arrangePeers(props.peers, filter.value, props.marks));
+
+function setFavorite(id: string, on: boolean) {
+  const rest = props.marks.favorites.filter((f) => f !== id);
+  emit("marks", { ...props.marks, favorites: on ? [...rest, id] : rest });
+}
+
+function setRemark(id: string, text: string) {
+  const notes = { ...props.marks.notes };
+  if (text) notes[id] = text;
+  else delete notes[id];
+  emit("marks", { ...props.marks, notes });
+}
 const filtering = computed(() => isFiltering(filter.value));
 
 function clearFilter() {
@@ -96,7 +112,7 @@ onUnmounted(() => unlisten?.());
             v-model="filter.query"
             type="search"
             class="ui-input w-48 py-1 pl-7 text-xs select-text"
-            placeholder="搜索名称、IP、系统"
+            placeholder="搜索名称、备注、IP、系统"
             @keydown.esc="filter.query = ''"
           />
         </span>
@@ -123,6 +139,10 @@ onUnmounted(() => unlisten?.());
         :sending="sending.has(d.id)"
         :data-drop-id="d.conn.kind === 'offline' || sending.has(d.id) ? undefined : d.id"
         :drop-target="dropId === d.id"
+        :favorite="marks.favorites.includes(d.id)"
+        :remark="marks.notes[d.id]"
+        @favorite="setFavorite(d.id, $event)"
+        @remark="setRemark(d.id, $event)"
         @copy="emit('copy', $event)"
         @test="emit('test', d)"
         @ssh="emit('ssh', $event)"

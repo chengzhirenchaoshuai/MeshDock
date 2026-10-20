@@ -1,4 +1,4 @@
-// 设备页的列表逻辑：筛选、按连接状态统计。纯函数，便于单元测试
+// 设备页的列表逻辑：筛选、收藏置顶、按连接状态统计。纯函数，便于单元测试
 import type { Device } from "./api";
 import { connTone, matchDevice } from "./format";
 
@@ -13,9 +13,24 @@ export interface PeerFilter {
 /** 有没有在筛选（决定标题上是否显示“符合条件数 / 总数”） */
 export const isFiltering = (f: PeerFilter): boolean => f.query.trim() !== "" || f.onlineOnly;
 
-/** 按搜索词和“只看在线”筛选，保持原有顺序 */
-export function filterPeers(peers: Device[], f: PeerFilter): Device[] {
-  return peers.filter((d) => matchDevice(d, f.query) && (!f.onlineOnly || d.conn.kind !== "offline"));
+/** 本机给设备加的备注和收藏（存在设置里） */
+export interface PeerMarks {
+  /** 设备 id → 备注 */
+  notes: Record<string, string>;
+  /** 收藏的设备 id */
+  favorites: string[];
+}
+
+/** 按搜索词（也匹配备注）和“只看在线”筛选，保持原有顺序 */
+export function filterPeers(peers: Device[], f: PeerFilter, notes: Record<string, string> = {}): Device[] {
+  return peers.filter((d) => matchDevice(d, f.query, notes[d.id]) && (!f.onlineOnly || d.conn.kind !== "offline"));
+}
+
+/** 设备列表的最终顺序：先筛选，再把收藏的设备提到最前；两组内部保持后端的顺序（在线在前、路由器在前、按名称） */
+export function arrangePeers(peers: Device[], f: PeerFilter, marks: PeerMarks): Device[] {
+  const fav = new Set(marks.favorites);
+  const shown = filterPeers(peers, f, marks.notes);
+  return [...shown.filter((d) => fav.has(d.id)), ...shown.filter((d) => !fav.has(d.id))];
 }
 
 /** 概览里的一项：状态色名称、中文、台数 */

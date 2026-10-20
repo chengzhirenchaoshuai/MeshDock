@@ -362,6 +362,7 @@ onUnmounted(() => {
         @test="testOne"
         @ok="showOk"
         @error="showError"
+        @save="updateSettings"
       />
     </main>
 

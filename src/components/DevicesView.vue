@@ -15,7 +15,7 @@ import {
   type Settings,
   type Snapshot,
 } from "../api";
-import { peerStats } from "../devices";
+import { peerStats, type PeerMarks } from "../devices";
 import { backendLabel } from "../format";
 import DeviceCard from "./DeviceCard.vue";
 import ErrorView from "./ErrorView.vue";
@@ -49,6 +49,8 @@ const emit = defineEmits<{
   test: [device: Device];
   ok: [text: string];
   error: [text: string];
+  /** 保存设置（备注、收藏改了） */
+  save: [settings: Settings];
 }>();
 
 const overview = computed(() => props.snapshot?.overview ?? null);
@@ -56,6 +58,16 @@ const peers = computed(() => overview.value?.peers ?? []);
 /** 组网没在运行（已断开、需要登录等）：设备列表是断开前的旧信息 */
 const linkDown = computed(() => !!overview.value && overview.value.backendState !== "Running");
 const stats = computed(() => peerStats(peers.value));
+
+/** 备注和收藏存在设置里 */
+const marks = computed<PeerMarks>(() => ({
+  notes: props.settings?.deviceNotes ?? {},
+  favorites: props.settings?.favorites ?? [],
+}));
+
+function saveMarks(m: PeerMarks) {
+  if (props.settings) emit("save", { ...props.settings, deviceNotes: m.notes, favorites: m.favorites });
+}
 
 /** 1.102.4-t1a2b3c-g4d5e6f → 1.102.4 */
 const shortVersion = (v: string | null) => (v ? v.split("-")[0] : "版本未知");
@@ -193,6 +205,8 @@ async function sendTo(id: string, send: (id: string) => Promise<SendResult | nul
       :rustdesk="overview.rustdesk"
       :sending="sending"
       :disabled="linkDown"
+      :marks="marks"
+      @marks="saveMarks"
       @copy="copyIp"
       @test="emit('test', $event)"
       @ssh="launch(openSsh, $event)"

@@ -140,10 +140,10 @@ export function measureLine(ping: PingRecord | undefined, history: Sample[] | un
   return { text: "延迟未测", failed: false, raw: "" };
 }
 
-/** 设备搜索：按名称、MagicDNS 名、组网 IP、系统匹配，不分大小写；多个词用空格分开，需全部命中 */
-export function matchDevice(d: Device, query: string): boolean {
+/** 设备搜索：按名称、MagicDNS 名、组网 IP、系统和备注匹配，不分大小写；多个词用空格分开，需全部命中 */
+export function matchDevice(d: Device, query: string, note = ""): boolean {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
-  const text = [d.name, d.dnsName ?? "", d.os ?? "", ...d.ips].join(" ").toLowerCase();
+  const text = [d.name, d.dnsName ?? "", d.os ?? "", note, ...d.ips].join(" ").toLowerCase();
   return words.every((w) => text.includes(w));
 }

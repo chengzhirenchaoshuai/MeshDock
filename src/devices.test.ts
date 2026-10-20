@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConnKind, Device } from "./api";
-import { filterPeers, isFiltering, peerStats } from "./devices";
+import { arrangePeers, filterPeers, isFiltering, peerStats } from "./devices";
 
 const dev = (name: string, kind: ConnKind, ip = "100.64.0.1"): Device => ({
   id: name,
@@ -32,6 +32,29 @@ describe("filterPeers", () => {
     expect(filterPeers(peers, { query: "100.64.0.3", onlineOnly: true }).map((d) => d.name)).toEqual(["ming-pc"]);
     expect(filterPeers(peers, { query: "box", onlineOnly: true })).toEqual([]);
     expect(isFiltering({ query: "", onlineOnly: true })).toBe(true);
+  });
+});
+
+describe("arrangePeers", () => {
+  it("收藏的排在最前，两组内部保持原顺序", () => {
+    const marks = { notes: {}, favorites: ["box", "peng-work"] };
+    expect(arrangePeers(peers, { query: "", onlineOnly: false }, marks).map((d) => d.name)).toEqual([
+      "peng-work",
+      "box",
+      "ming-pc",
+      "tv",
+    ]);
+    // 筛选后再置顶：离线的收藏被“只看在线”滤掉
+    expect(arrangePeers(peers, { query: "", onlineOnly: true }, marks).map((d) => d.name)).toEqual([
+      "peng-work",
+      "ming-pc",
+      "tv",
+    ]);
+  });
+
+  it("搜索也匹配备注", () => {
+    const marks = { notes: { tv: "客厅电视" }, favorites: [] };
+    expect(arrangePeers(peers, { query: "客厅", onlineOnly: false }, marks).map((d) => d.name)).toEqual(["tv"]);
   });
 });
 

@@ -1,5 +1,6 @@
 //! 本机设置：保存在应用配置目录的 settings.json，只存界面偏好，不存任何密钥
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -29,6 +30,10 @@ pub struct Settings {
     pub latency_alert_ms: u64,
     /// 持续走中继多久后提醒（分钟），0 为关闭；只能取 RELAY_ALERT_CHOICES 中的值
     pub relay_alert_minutes: u64,
+    /// 设备 id → 备注（只存本机，不改控制端里的名字）
+    pub device_notes: BTreeMap<String, String>,
+    /// 收藏的设备 id，排在设备列表最前面
+    pub favorites: Vec<String>,
 }
 
 /// 状态刷新间隔的可选值（秒）
@@ -41,6 +46,8 @@ pub const PALETTE_CHOICES: [&str; 5] = ["aurora", "ocean", "neon", "jade", "grap
 pub const LATENCY_ALERT_CHOICES: [u64; 4] = [0, 100, 200, 500];
 /// 持续走中继提醒的可选值（分钟），0 为关闭
 pub const RELAY_ALERT_CHOICES: [u64; 4] = [0, 10, 30, 60];
+/// 备注最长多少个字符
+pub const NOTE_MAX_CHARS: usize = 40;
 /// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
 const HIDDEN_MIN_SECS: u64 = 30;
 
@@ -58,6 +65,8 @@ impl Default for Settings {
             sample_minutes: 5,
             latency_alert_ms: 0,
             relay_alert_minutes: 0,
+            device_notes: BTreeMap::new(),
+            favorites: Vec::new(),
         }
     }
 }
@@ -81,6 +90,16 @@ impl Settings {
         if !RELAY_ALERT_CHOICES.contains(&self.relay_alert_minutes) {
             self.relay_alert_minutes = default.relay_alert_minutes;
         }
+        // 备注去掉首尾空白、截到最长长度，空的不保存；收藏去重
+        self.device_notes = std::mem::take(&mut self.device_notes)
+            .into_iter()
+            .filter_map(|(id, note)| {
+                let note: String = note.trim().chars().take(NOTE_MAX_CHARS).collect();
+                (!note.is_empty()).then_some((id, note))
+            })
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        self.favorites.retain(|id| seen.insert(id.clone()));
         self
     }
 
@@ -232,6 +251,20 @@ mod tests {
             serde_json::from_str(r#"{ "latencyAlertMs": 7, "relayAlertMinutes": 5 }"#).unwrap();
         let s = s.sanitized();
         assert_eq!((s.latency_alert_ms, s.relay_alert_minutes), (0, 0));
+    }
+
+    #[test]
+    fn 备注去空白截长度_收藏去重() {
+        let s: Settings = serde_json::from_str(
+            r#"{ "deviceNotes": { "a": "  书房台式机 ", "b": "   ", "c": "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十多余" },
+                 "favorites": ["a", "c", "a"] }"#,
+        )
+        .unwrap();
+        let s = s.sanitized();
+        assert_eq!(s.device_notes.get("a").map(String::as_str), Some("书房台式机"));
+        assert!(!s.device_notes.contains_key("b"));
+        assert_eq!(s.device_notes["c"].chars().count(), NOTE_MAX_CHARS);
+        assert_eq!(s.favorites, ["a", "c"]);
     }
 
     #[test]

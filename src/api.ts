@@ -182,6 +182,10 @@ export interface Settings {
   latencyAlertMs: number;
   /** 持续走中继多久后提醒（分钟）：0（关闭）/ 10 / 30 / 60 */
   relayAlertMinutes: number;
+  /** 设备 id → 备注（只存本机） */
+  deviceNotes: Record<string, string>;
+  /** 收藏的设备 id，排在设备列表最前面 */
+  favorites: string[];
 }
 
 /** 保存全部设置并立即生效（主题、开机自启） */

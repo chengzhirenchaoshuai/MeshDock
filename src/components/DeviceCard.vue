@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { ArrowDown, ArrowUp, Copy, Gauge, MonitorSmartphone, Send, SquareTerminal } from "@lucide/vue";
+import { computed, nextTick, ref } from "vue";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  Gauge,
+  MonitorSmartphone,
+  Pencil,
+  Send,
+  SquareTerminal,
+  Star,
+} from "@lucide/vue";
 import type { Device, PingRecord, Sample } from "../api";
 import LatencyChart from "./LatencyChart.vue";
 import { connTone, formatBytes, measureLine, timeAgo } from "../format";
@@ -30,8 +40,41 @@ const props = defineProps<{
   sending?: boolean;
   /** 正有文件拖到这张卡片上 */
   dropTarget?: boolean;
+  /** 已收藏（排在列表最前） */
+  favorite?: boolean;
+  /** 本机给这台设备加的备注 */
+  remark?: string;
 }>();
-const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string]; send: [] }>();
+const emit = defineEmits<{
+  copy: [ip: string];
+  test: [];
+  ssh: [alias: string];
+  rustdesk: [ip: string];
+  send: [];
+  favorite: [on: boolean];
+  remark: [text: string];
+}>();
+
+// ---------- 备注：点击进入编辑，回车或离开输入框保存，Esc 放弃 ----------
+/** 与 settings.rs 中的 NOTE_MAX_CHARS 一致 */
+const NOTE_MAX = 40;
+const editing = ref(false);
+const draft = ref("");
+const input = ref<HTMLInputElement | null>(null);
+
+async function startEdit() {
+  draft.value = props.remark ?? "";
+  editing.value = true;
+  await nextTick();
+  input.value?.select();
+}
+
+function commitEdit() {
+  if (!editing.value) return;
+  editing.value = false;
+  const text = draft.value.trim();
+  if (text !== (props.remark ?? "")) emit("remark", text);
+}
 
 const offline = computed(() => props.device.conn.kind === "offline");
 const isSelf = computed(() => props.device.conn.kind === "self-node");
@@ -66,7 +109,7 @@ const timeLine = computed(() => {
 
 <template>
   <article
-    class="ui-card ui-card-interactive flex flex-col gap-3 overflow-hidden p-4 pl-5"
+    class="ui-card ui-card-interactive group/card flex flex-col gap-3 overflow-hidden p-4 pl-5"
     :class="{ 'opacity-75': offline }"
     :style="dropTarget ? { borderColor: 'var(--md-accent)', boxShadow: '0 0 0 3px var(--md-accent-soft)' } : undefined"
   >
@@ -115,8 +158,50 @@ const timeLine = computed(() => {
           {{ ip }}
           <Copy class="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
+        <!-- 备注（本机卡片没有）：没写备注时只在悬停卡片时显示“添加备注” -->
+        <template v-if="!isSelf">
+          <input
+            v-if="editing"
+            ref="input"
+            v-model="draft"
+            class="ui-input mt-1 block w-full py-0.5 text-xs select-text"
+            :maxlength="NOTE_MAX"
+            placeholder="给这台设备写个备注，如“书房台式机”"
+            @keydown.enter="commitEdit"
+            @keydown.esc="editing = false"
+            @blur="commitEdit"
+          />
+          <button
+            v-else
+            type="button"
+            class="group mt-0.5 flex max-w-full items-center gap-1 text-left text-xs transition-colors hover:text-accent"
+            :class="remark ? 'text-fg' : 'text-faint opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100'"
+            :title="remark ? '点击修改备注' : '添加备注（只保存在本机）'"
+            @click="startEdit"
+          >
+            <span class="truncate">{{ remark || "添加备注" }}</span>
+            <Pencil class="size-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+          </button>
+        </template>
       </div>
-      <StatusPill :tone="tone" :label="conn.label" :pulse="conn.kind === 'punching'" />
+      <div class="flex shrink-0 items-center gap-1">
+        <button
+          v-if="!isSelf"
+          type="button"
+          class="grid size-6 place-items-center rounded transition-colors hover:text-accent"
+          :class="
+            favorite
+              ? 'text-[var(--md-punching)]'
+              : 'text-faint opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100'
+          "
+          :title="favorite ? '取消收藏' : '收藏：排在设备列表最前面'"
+          :aria-pressed="favorite"
+          @click="emit('favorite', !favorite)"
+        >
+          <Star class="size-3.5" :fill="favorite ? 'currentColor' : 'none'" />
+        </button>
+        <StatusPill :tone="tone" :label="conn.label" :pulse="conn.kind === 'punching'" />
+      </div>
     </header>
 
     <p v-if="conn.hint" class="text-xs leading-relaxed" :style="{ color: `var(--md-${tone})` }">
