@@ -15,6 +15,7 @@ mod paths;
 mod report;
 mod router;
 mod settings;
+mod ssh;
 mod sysinfo;
 mod tray;
 mod window;

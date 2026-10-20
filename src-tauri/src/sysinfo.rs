@@ -1,15 +1,9 @@
 //! 系统信息：经 ssh 到 Linux 设备上只读采集运行时长、负载、内存、磁盘、IPv6、电池、监听端口
 use serde::Serialize;
-use std::process::Stdio;
 use std::time::Duration;
-use tokio::process::Command;
 
 /// 整条 ssh 命令的硬超时（含建立连接）
 const TIMEOUT: Duration = Duration::from_secs(15);
-
-/// 不弹出控制台窗口
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 远端执行的命令：只读，每段前面打 @@ 标记，某段失败不影响其他段。
 /// 写成一行，避免 Windows 传参时换行出问题
@@ -193,48 +187,8 @@ fn parse_ports(lines: &[&str]) -> Vec<u16> {
 
 /// 经 ssh 采集。BatchMode：需要密码或确认主机指纹时直接失败，不会卡住等输入
 pub async fn fetch(alias: &str) -> Result<SysInfo, String> {
-    let stdout = ssh_output(alias, SCRIPT, TIMEOUT).await?;
+    let stdout = crate::ssh::output(alias, SCRIPT, TIMEOUT).await?;
     parse(&stdout).ok_or_else(|| "没有采集到信息，对方可能不是 Linux".into())
-}
-
-/// 经 ssh <别名> 在远端执行一条命令，返回标准输出。
-/// BatchMode：需要密码或确认主机指纹时直接失败，不会卡住等输入；ssh 自己失败（退出码 255）时报错，
-/// 远端命令的退出码不算失败，由调用方按输出判断
-pub async fn ssh_output(alias: &str, remote: &str, timeout: Duration) -> Result<String, String> {
-    if !crate::launch::valid_alias(alias) {
-        return Err(format!("SSH 别名含有不支持的字符：{alias}"));
-    }
-    let mut cmd = Command::new("ssh");
-    cmd.args([
-        "-T",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=5",
-        alias,
-        remote,
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .kill_on_drop(true);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-
-    let out = match tokio::time::timeout(timeout, cmd.output()).await {
-        Err(_) => return Err(format!("ssh {alias} 超过 {} 秒没有返回", timeout.as_secs())),
-        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err("找不到 ssh 命令，请安装 Windows 自带的 OpenSSH 客户端".into());
-        }
-        Ok(Err(e)) => return Err(format!("执行 ssh 失败：{e}")),
-        Ok(Ok(out)) => out,
-    };
-    // 退出码 255 是 ssh 自己失败（连不上、认证失败），其余是远端命令的退出码，不影响已采到的内容
-    if out.status.code() == Some(255) {
-        let err = String::from_utf8_lossy(&out.stderr);
-        return Err(format!("ssh {alias} 连接失败：{}", err.trim()));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(test)]

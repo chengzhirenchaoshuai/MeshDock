@@ -1,102 +1,31 @@
 //! 后台定时读取组网状态：整理成快照推给前端，并更新托盘
+mod alerts;
+mod cache;
+mod snapshot;
+mod tasks;
+
+pub use snapshot::{Device, Location, Overview, Snapshot, SubnetRoute};
+pub use tasks::record_history;
+
 use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
-use crate::cli::{self, CliError};
+use crate::cli;
 use crate::gateway;
-use crate::history::{HistoryStore, Sample};
 use crate::launch;
-use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status, non_empty, time_ms};
-use crate::notify::{Mismatch, MismatchWatcher, PathClass, PathWatcher};
-use crate::router::{self, RouterHealth};
+use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status};
+use crate::notify::{MismatchWatcher, PathWatcher};
+use crate::router;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
-use serde::Serialize;
+use cache::Ttl;
+use snapshot::{device, peer_order};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Notify;
 
 /// 推给前端的快照事件
 pub const SNAPSHOT_EVENT: &str = "snapshot";
-
-/// 一台设备，给前端展示用
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Device {
-    pub id: String,
-    pub name: String,
-    pub dns_name: Option<String>,
-    pub ips: Vec<String>,
-    pub os: Option<String>,
-    pub online: Option<bool>,
-    pub conn: Conn,
-    pub rx_bytes: Option<u64>,
-    pub tx_bytes: Option<u64>,
-    pub last_seen_ms: Option<i64>,
-    pub last_handshake_ms: Option<i64>,
-    /// 节点公钥，只在后端用来对应 netmap，不发给前端
-    #[serde(skip)]
-    pub key: Option<String>,
-    /// ~/.ssh/config 中对应这台设备的别名，没有则不显示 SSH 按钮
-    pub ssh_alias: Option<String>,
-    /// 这台设备可以当出口
-    pub exit_option: bool,
-    /// 本机正在用这台设备当出口
-    pub exit_active: bool,
-}
-
-/// 组网整体情况
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Overview {
-    pub backend_state: Option<String>,
-    pub control_unreachable: bool,
-    pub version: Option<String>,
-    pub self_device: Option<Device>,
-    pub peers: Vec<Device>,
-    /// 本机 accept-routes 的实际值（读取 debug prefs）；读取失败为 None
-    pub accept_routes: Option<bool>,
-    /// 本机的组网选项（出口、DNS、传入连接等）；读取失败为 None
-    pub prefs: Option<LocalPrefs>,
-    /// 组网里发布了子网路由的设备
-    pub subnet_routes: Vec<SubnetRoute>,
-    /// 本机在不在家
-    pub location: Location,
-    /// 本机是否装了 RustDesk（决定是否显示 RustDesk 按钮）
-    pub rustdesk: bool,
-    /// 子网路由器的健康状态
-    pub routers: Vec<RouterHealth>,
-    /// 官方客户端有新版本时为新版本号
-    pub client_update: Option<String>,
-}
-
-/// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记
-#[derive(Serialize, Clone, Debug, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Location {
-    /// None 表示无法判断（读不到网关且没有手动标记）
-    pub at_home: Option<bool>,
-    /// true 为按网关自动识别，false 为手动标记
-    pub auto: bool,
-    /// 当前所有默认网关
-    pub gateways: Vec<String>,
-    /// 设置中的家里网关
-    pub home_gateway: String,
-}
-
-/// 延迟历史更新时推给前端的事件
-pub const HISTORY_EVENT: &str = "history";
-
-/// 记入历史并推给前端（后台测量和手动测试共用）
-pub fn record_history(app: &AppHandle, samples: Vec<(String, Sample)>) {
-    if samples.is_empty() {
-        return;
-    }
-    let store = app.state::<HistoryStore>();
-    store.add(samples, now_ms());
-    let _ = app.emit(HISTORY_EVENT, store.get());
-}
 
 /// 读取默认网关并判断位置
 fn locate(settings: &Settings) -> Location {
@@ -108,23 +37,6 @@ fn locate(settings: &Settings) -> Location {
         gateways: gateways.iter().map(ToString::to_string).collect(),
         home_gateway: settings.home_gateway.clone(),
     }
-}
-
-/// 某台设备发布的子网路由
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct SubnetRoute {
-    pub device: String,
-    pub routes: Vec<String>,
-}
-
-/// 一次刷新的结果：成功时有 overview，失败时有 error
-#[derive(Serialize, Clone, Debug, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Snapshot {
-    pub overview: Option<Overview>,
-    pub error: Option<CliError>,
-    pub updated_at_ms: i64,
 }
 
 /// 后台监视器，作为 Tauri 托管状态
@@ -165,45 +77,6 @@ struct Inner {
     client_update: Mutex<Option<String>>,
 }
 
-/// 带有效期的缓存值
-struct Ttl<T> {
-    ttl: Duration,
-    value: Mutex<Option<(Instant, T)>>,
-}
-
-impl<T: Clone> Ttl<T> {
-    fn new(ttl: Duration) -> Self {
-        Self {
-            ttl,
-            value: Mutex::new(None),
-        }
-    }
-
-    /// 未过期时返回缓存值
-    fn get(&self) -> Option<T> {
-        let value = self.value.lock().unwrap();
-        let (at, v) = value.as_ref()?;
-        (at.elapsed() < self.ttl).then(|| v.clone())
-    }
-
-    fn set(&self, v: T) {
-        *self.value.lock().unwrap() = Some((Instant::now(), v));
-    }
-
-    fn clear(&self) {
-        *self.value.lock().unwrap() = None;
-    }
-
-    /// 未过期时用缓存，否则重新计算并缓存
-    fn get_or(&self, f: impl FnOnce() -> T) -> T {
-        self.get().unwrap_or_else(|| {
-            let v = f();
-            self.set(v.clone());
-            v
-        })
-    }
-}
-
 /// RustDesk 是否安装，多久重新检测一次
 const RUSTDESK_TTL: Duration = Duration::from_secs(60);
 /// 本机组网选项多久重新读取一次。默认刷新间隔（10 秒）下每 3 轮读一次；
@@ -219,12 +92,6 @@ struct NetInfos {
     /// 节点公钥 → 设备的局域网 IPv4，用来对应 ~/.ssh/config 里写局域网地址的别名
     lan_ips: HashMap<String, Vec<String>>,
 }
-
-/// 启动后多久第一次检查官方客户端新版本（留几秒给开机时的网络），之后多久检查一次
-const UPDATE_FIRST_DELAY: Duration = Duration::from_secs(5);
-const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
-/// 检查失败（如开机时还没联网）后，多久重试
-const UPDATE_RETRY: Duration = Duration::from_secs(10 * 60);
 
 /// 中继区域表读取失败后，多久再重试
 const REGIONS_RETRY: Duration = Duration::from_secs(60);
@@ -279,12 +146,12 @@ impl Monitor {
         let this = self.clone();
         let update_app = app.clone();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(UPDATE_FIRST_DELAY).await;
+            tokio::time::sleep(tasks::UPDATE_FIRST_DELAY).await;
             loop {
                 let wait = if this.check_client_update(&update_app).await {
-                    UPDATE_INTERVAL
+                    tasks::UPDATE_INTERVAL
                 } else {
-                    UPDATE_RETRY
+                    tasks::UPDATE_RETRY
                 };
                 tokio::time::sleep(wait).await;
             }
@@ -310,75 +177,10 @@ impl Monitor {
         });
     }
 
-    /// 检查官方客户端有没有新版本；发现新的版本号时发一次通知。查不到（如断网）时保持原结果并返回 false
-    async fn check_client_update(&self, app: &AppHandle) -> bool {
-        let Ok(info) = cli::version_upstream().await else {
-            return false;
-        };
-        let newer = info.newer_upstream();
-        let previous = std::mem::replace(
-            &mut *self.inner.client_update.lock().unwrap(),
-            newer.clone(),
-        );
-        let Some(v) = newer.filter(|v| previous.as_ref() != Some(v)) else {
-            return true;
-        };
-        // 立即刷新一次，让本机卡片马上标出新版本
-        self.wake();
-        crate::applog::info(format!("Tailscale 官方客户端有新版本 {v}"));
-        if app.state::<SettingsStore>().get().notify
-            && let Err(e) = app
-                .notification()
-                .builder()
-                .title(format!("Tailscale 有新版本 {v}"))
-                .body("可在官方客户端的托盘菜单中更新，或到 tailscale.com 下载。")
-                .show()
-        {
-            crate::applog::error(format!("发送通知失败：{e}"));
-        }
-        true
-    }
-
     /// 刷新或测速间隔改了：立即按新间隔重新计时
     pub fn intervals_changed(&self) {
         self.inner.wake.notify_one();
         self.inner.history_wake.notify_one();
-    }
-
-    /// 并发 ping 所有在线设备，结果记入历史
-    async fn sample_history(&self, app: &AppHandle) {
-        let targets: Vec<(String, String)> = self
-            .latest()
-            .and_then(|s| s.overview)
-            // 组网断开时设备列表是断开前的旧信息，测出来的“无回应”会把小图画错，跳过
-            .filter(|o| o.backend_state.as_deref() == Some("Running"))
-            .map(|o| o.peers)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|d| d.conn.kind != ConnKind::Offline)
-            .filter_map(|d| {
-                let ip = d.ips.iter().find(|a| !a.contains(':'))?.clone();
-                Some((d.id, ip))
-            })
-            .collect();
-        if targets.is_empty() {
-            return;
-        }
-        let regions = self.regions().await;
-        let local = self.local();
-        let mut set = tokio::task::JoinSet::new();
-        for (id, ip) in targets {
-            let (regions, local) = (regions.clone(), local.clone());
-            set.spawn(async move { (id, cli::ping(&ip, &regions, &local).await) });
-        }
-        let mut samples = Vec::new();
-        while let Some(Ok((id, result))) = set.join_next().await {
-            // 命令本身出错（如服务没运行）不记录，避免把故障画成“无回应”
-            if let Ok(r) = result {
-                samples.push((id, Sample::from_ping(now_ms(), &r)));
-            }
-        }
-        record_history(app, samples);
     }
 
     /// 要求后台立即刷新一次（托盘“刷新”、窗口重新显示时）
@@ -550,56 +352,6 @@ impl Monitor {
         classify::with_relay_reason(conn, classify::relay_reason(infos.me.as_ref(), peer))
     }
 
-    /// 检查路径变化和模式开错，需要时发通知。关闭通知时仍然更新判断状态，重新打开后不会补发旧变化
-    fn notify_changes(&self, app: &AppHandle, overview: &Overview, enabled: bool) {
-        let now = Instant::now();
-        let mut messages = Vec::new();
-        {
-            let mut paths = self.inner.paths.lock().unwrap();
-            for d in &overview.peers {
-                let Some(change) = paths.observe(&d.id, PathClass::of(d.conn.kind), now) else {
-                    continue;
-                };
-                let title = match change.to {
-                    PathClass::Relay => format!("{} 从直连变成了中继", d.name),
-                    PathClass::Direct => format!("{} 恢复直连", d.name),
-                };
-                let body = match &d.conn.hint {
-                    Some(hint) => format!("{}。{hint}", d.conn.label),
-                    None => d.conn.label.clone(),
-                };
-                messages.push((title, body));
-            }
-        }
-        if let Some(name) = self.exit_went_offline(overview) {
-            messages.push((
-                format!("出口设备 {name} 离线了"),
-                "本机的上网流量都经它转发，现在可能上不了网。打开 MeshDock 换一台出口或停用出口。".into(),
-            ));
-        }
-        let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes);
-        if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch) {
-            let (title, body) = m.message();
-            messages.push((title.into(), body.into()));
-        }
-        if !enabled {
-            return;
-        }
-        for (title, body) in messages {
-            if let Err(e) = app.notification().builder().title(title).body(body).show() {
-                crate::applog::error(format!("发送通知失败：{e}"));
-            }
-        }
-    }
-
-    /// 选用的出口设备刚变成离线（或已不在列表里）时返回它的名字，持续离线不重复
-    fn exit_went_offline(&self, overview: &Overview) -> Option<String> {
-        let offline = exit_offline(overview.prefs.as_ref(), &overview.peers);
-        let mut last = self.inner.exit_offline.lock().unwrap();
-        let was = std::mem::replace(&mut *last, offline.is_some());
-        offline.filter(|_| !was)
-    }
-
     /// 本机组网选项：缓存未过期时直接用，否则读取 debug prefs；读取失败不缓存
     async fn read_prefs(&self) -> Option<LocalPrefs> {
         if let Some(v) = self.inner.prefs.get() {
@@ -767,52 +519,6 @@ impl Monitor {
     }
 }
 
-impl Device {
-    /// 组网 IP，优先 IPv4
-    fn main_ip(&self) -> Option<String> {
-        self.ips
-            .iter()
-            .find(|a| !a.contains(':'))
-            .or(self.ips.first())
-            .cloned()
-    }
-}
-
-fn device(p: &PeerStatus, conn: Conn) -> Device {
-    Device {
-        id: p.id.clone().unwrap_or_default(),
-        name: p.display_name().unwrap_or("未知设备").to_string(),
-        dns_name: non_empty(&p.dns_name).map(|s| s.trim_end_matches('.').to_string()),
-        ips: p.tailscale_ips.clone().unwrap_or_default(),
-        os: non_empty(&p.os).map(str::to_string),
-        online: p.online,
-        conn,
-        rx_bytes: p.rx_bytes,
-        tx_bytes: p.tx_bytes,
-        last_seen_ms: time_ms(p.last_seen.as_deref()),
-        last_handshake_ms: time_ms(p.last_handshake.as_deref()),
-        key: p.public_key.clone(),
-        ssh_alias: None,
-        exit_option: p.exit_node_option == Some(true),
-        exit_active: p.exit_node == Some(true),
-    }
-}
-
-/// 选用的出口设备离线或已不在组网中时返回它的名字；没选出口返回 None
-fn exit_offline(prefs: Option<&LocalPrefs>, peers: &[Device]) -> Option<String> {
-    let id = prefs?.exit_node_id.as_ref()?;
-    match peers.iter().find(|d| &d.id == id) {
-        Some(d) => (d.conn.kind == ConnKind::Offline).then(|| d.name.clone()),
-        None => Some("（已不在组网中）".into()),
-    }
-}
-
-/// 设备卡片的排序键：在线的在前、离线的在后；在线里子网路由器在前；同组按名称（不分大小写）。
-/// 不按连接方式或延迟排，避免卡片随路径变化来回跳
-fn peer_order(offline: bool, router: bool, name: &str) -> (bool, bool, String) {
-    (offline, !router, name.to_lowercase())
-}
-
 /// 读取状态出错、恢复或错误类型变化时记入日志；状态不变时不重复记录
 fn log_error_change(previous: Option<&Snapshot>, current: &Snapshot) {
     let before = previous.and_then(|s| s.error.as_ref()).map(|e| e.kind);
@@ -846,81 +552,4 @@ pub fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn 缓存未过期时不重新计算_作废后重新计算() {
-        let cache = Ttl::new(Duration::from_secs(60));
-        let mut calls = 0;
-        assert!(cache.get_or(|| {
-            calls += 1;
-            true
-        }));
-        assert!(cache.get_or(|| {
-            calls += 1;
-            false
-        }));
-        assert_eq!(calls, 1);
-        cache.clear();
-        assert_eq!(cache.get(), None);
-        // 有效期为 0 时总是过期
-        let expired = Ttl::new(Duration::ZERO);
-        expired.set(Some(true));
-        assert_eq!(expired.get(), None);
-    }
-
-    fn dev(id: &str, kind: ConnKind) -> Device {
-        Device {
-            id: id.into(),
-            name: format!("{id}-名"),
-            dns_name: None,
-            ips: vec![],
-            os: None,
-            online: None,
-            conn: Conn { kind, label: String::new(), hint: None },
-            rx_bytes: None,
-            tx_bytes: None,
-            last_seen_ms: None,
-            last_handshake_ms: None,
-            key: None,
-            ssh_alias: None,
-            exit_option: true,
-            exit_active: false,
-        }
-    }
-
-    #[test]
-    fn 出口设备离线判断() {
-        let peers = [dev("a", ConnKind::Lan), dev("b", ConnKind::Offline)];
-        let pick = |id: Option<&str>| LocalPrefs {
-            exit_node_id: id.map(str::to_string),
-            ..Default::default()
-        };
-        assert_eq!(exit_offline(None, &peers), None);
-        assert_eq!(exit_offline(Some(&pick(None)), &peers), None);
-        assert_eq!(exit_offline(Some(&pick(Some("a"))), &peers), None);
-        assert_eq!(exit_offline(Some(&pick(Some("b"))), &peers).as_deref(), Some("b-名"));
-        assert_eq!(
-            exit_offline(Some(&pick(Some("x"))), &peers).as_deref(),
-            Some("（已不在组网中）")
-        );
-    }
-
-    #[test]
-    fn 设备排序_在线在前_路由器在前_再按名称() {
-        let mut list = [
-            ("ming-pc", true, false),
-            ("peng-work", false, false),
-            ("Alpha", false, false),
-            ("phone-router", false, true),
-            ("box", true, false),
-        ];
-        list.sort_by_key(|&(name, offline, router)| peer_order(offline, router, name));
-        let names: Vec<_> = list.iter().map(|t| t.0).collect();
-        assert_eq!(names, ["phone-router", "Alpha", "peng-work", "box", "ming-pc"]);
-    }
 }

@@ -105,18 +105,9 @@ impl SshHostsCache {
     }
 }
 
-/// 别名只允许常见字符，避免被终端当成命令分隔符或选项
-pub fn valid_alias(alias: &str) -> bool {
-    !alias.is_empty()
-        && !alias.starts_with('-')
-        && alias
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
-}
-
 /// 在新终端中执行 `ssh <别名>`：有 Windows Terminal 就用它，否则开一个新的控制台窗口
 pub fn open_ssh(alias: &str) -> Result<(), String> {
-    if !valid_alias(alias) {
+    if !crate::ssh::valid_alias(alias) {
         return Err(format!("SSH 别名含有不支持的字符：{alias}"));
     }
     let wt = std::env::var_os("PATH").and_then(|p| {
@@ -246,10 +237,7 @@ Host *.example.com
     }
 
     #[test]
-    fn 别名与链接校验() {
-        assert!(valid_alias("peng-work"));
-        assert!(!valid_alias("-oProxyCommand=x"));
-        assert!(!valid_alias("a;calc"));
+    fn 链接校验() {
         assert_eq!(
             rustdesk_url("100.64.0.3").unwrap(),
             "rustdesk://connect/100.64.0.3"

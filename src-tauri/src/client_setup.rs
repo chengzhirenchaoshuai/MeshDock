@@ -165,7 +165,7 @@ pub async fn get(alias: Option<&str>) -> Result<ClientSetup, String> {
 /// 经 ssh 在对方执行；远端默认命令行是 cmd 或 PowerShell 都能直接运行这条命令
 async fn remote(alias: &str, encoded: &str) -> Result<ClientSetup, String> {
     let command = format!("powershell -NoProfile -NonInteractive -EncodedCommand {encoded}");
-    let stdout = crate::sysinfo::ssh_output(alias, &command, SSH_TIMEOUT).await?;
+    let stdout = crate::ssh::output(alias, &command, SSH_TIMEOUT).await?;
     parse(&stdout, "对方")
 }
 
