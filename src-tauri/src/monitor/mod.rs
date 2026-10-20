@@ -1,5 +1,6 @@
 //! 后台定时读取组网状态：整理成快照推给前端，并更新托盘
 mod alerts;
+mod auto_mode;
 mod cache;
 mod snapshot;
 mod tasks;
@@ -12,7 +13,7 @@ use crate::cli;
 use crate::gateway;
 use crate::launch;
 use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status};
-use crate::notify::{LatencyWatcher, MismatchWatcher, PathWatcher, RelayWatcher};
+use crate::notify::{AutoMode, LatencyWatcher, MismatchWatcher, PathWatcher, RelayWatcher};
 use crate::router;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
@@ -62,6 +63,8 @@ struct Inner {
     /// 持续走中继、延迟持续偏高的判断状态
     relay: Mutex<RelayWatcher>,
     latency: Mutex<LatencyWatcher>,
+    /// 自动切换在家 / 出门模式的判断状态
+    auto_mode: Mutex<AutoMode>,
     wake: Notify,
     /// 唤醒后台测速循环（测速间隔改了时）
     history_wake: Notify,
@@ -116,6 +119,7 @@ impl Monitor {
                 mismatch: Mutex::new(MismatchWatcher::default()),
                 relay: Mutex::new(RelayWatcher::default()),
                 latency: Mutex::new(LatencyWatcher::default()),
+                auto_mode: Mutex::new(AutoMode::default()),
                 wake: Notify::new(),
                 history_wake: Notify::new(),
                 refreshing: tokio::sync::Mutex::new(()),
@@ -409,7 +413,8 @@ impl Monitor {
                 self.enrich(&mut overview).await;
                 let settings = app.state::<SettingsStore>().get();
                 overview.location = locate(&settings);
-                self.notify_changes(app, &overview, &settings);
+                let switching = self.auto_mode(app, &overview, &settings);
+                self.notify_changes(app, &overview, &settings, switching);
                 Snapshot {
                     overview: Some(overview),
                     error: None,

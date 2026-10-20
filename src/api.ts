@@ -186,6 +186,8 @@ export interface Settings {
   deviceNotes: Record<string, string>;
   /** 收藏的设备 id，排在设备列表最前面 */
   favorites: string[];
+  /** 按网关识别到位置变化、模式不对时自动切换在家 / 出门模式 */
+  autoMode: boolean;
 }
 
 /** 保存全部设置并立即生效（主题、开机自启） */

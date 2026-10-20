@@ -126,6 +126,50 @@ impl MismatchWatcher {
     }
 }
 
+/// 自动切换模式前，新位置要连续出现几轮刷新（刚换网络时网关可能还没稳定）
+pub const AUTO_STABLE_ROUNDS: u8 = 2;
+
+/// 自动切换在家 / 出门模式的判断：只在按网关识别的位置变化（或刚开启自动切换）后处理一次，
+/// 模式和位置不一致时给出要切换到的 accept-routes 值。处理过的位置不再处理，
+/// 所以用户之后手动改了模式，在位置再次变化之前不会被改回去；切换失败也不会反复重试
+#[derive(Default)]
+pub struct AutoMode {
+    /// 已经处理过的位置（true 在家）
+    handled: Option<bool>,
+    /// 候选的新位置及连续出现的轮数
+    pending: Option<(bool, u8)>,
+}
+
+impl AutoMode {
+    /// at_home 只传按网关自动识别的结果（手动标记的不算）；需要切换时返回目标 accept-routes 值
+    pub fn observe(&mut self, at_home: Option<bool>, accept_routes: Option<bool>) -> Option<bool> {
+        let (Some(home), Some(routes)) = (at_home, accept_routes) else {
+            return None;
+        };
+        if self.handled == Some(home) {
+            self.pending = None;
+            return None;
+        }
+        let rounds = match self.pending {
+            Some((p, n)) if p == home => n + 1,
+            _ => 1,
+        };
+        if rounds < AUTO_STABLE_ROUNDS {
+            self.pending = Some((home, rounds));
+            return None;
+        }
+        self.pending = None;
+        self.handled = Some(home);
+        // 在家应关闭 accept-routes，在外应开启
+        (Mismatch::of(Some(home), Some(routes)).is_some()).then_some(!home)
+    }
+
+    /// 关闭自动切换时清空，重新开启后按当前位置重新处理
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 /// 延迟连续多少次后台测速超过阈值才提醒，避免偶尔一次抖动就打扰
 pub const LATENCY_STREAK: usize = 3;
 
@@ -178,6 +222,37 @@ impl RelayWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 自动切换_位置稳定两轮后才切_手动改回不再干预() {
+        let mut a = AutoMode::default();
+        // 在家却开着出门模式：第一轮只记下，第二轮才切到在家（accept-routes=false）
+        assert_eq!(a.observe(Some(true), Some(true)), None);
+        assert_eq!(a.observe(Some(true), Some(true)), Some(false));
+        // 用户随后又手动开了出门模式：位置没变，不再干预
+        assert_eq!(a.observe(Some(true), Some(true)), None);
+        assert_eq!(a.observe(Some(true), Some(true)), None);
+        // 出门了：在外却没开出门模式，稳定两轮后切到出门
+        assert_eq!(a.observe(Some(false), Some(false)), None);
+        assert_eq!(a.observe(Some(false), Some(false)), Some(true));
+    }
+
+    #[test]
+    fn 自动切换_模式本来就对时不切_网关短暂变化不算() {
+        let mut a = AutoMode::default();
+        assert_eq!(a.observe(Some(false), Some(true)), None);
+        assert_eq!(a.observe(Some(false), Some(true)), None, "在外且已开出门模式，不需要切");
+        // 只闪了一轮“在家”又回到在外：不处理
+        assert_eq!(a.observe(Some(true), Some(true)), None);
+        assert_eq!(a.observe(Some(false), Some(true)), None);
+        // 读不到网关或模式时不处理，也不打断计数
+        assert_eq!(a.observe(None, Some(true)), None);
+        assert_eq!(a.observe(Some(true), None), None);
+        // 关闭后重新开启：按当前位置重新处理
+        a.reset();
+        assert_eq!(a.observe(Some(true), Some(true)), None);
+        assert_eq!(a.observe(Some(true), Some(true)), Some(false));
+    }
 
     #[test]
     fn 延迟连续三次超标才提醒_回落后重新计数() {

@@ -34,6 +34,8 @@ pub struct Settings {
     pub device_notes: BTreeMap<String, String>,
     /// 收藏的设备 id，排在设备列表最前面
     pub favorites: Vec<String>,
+    /// 按网关识别到位置变化、模式不对时自动切换在家 / 出门模式，默认关闭
+    pub auto_mode: bool,
 }
 
 /// 状态刷新间隔的可选值（秒）
@@ -67,6 +69,7 @@ impl Default for Settings {
             relay_alert_minutes: 0,
             device_notes: BTreeMap::new(),
             favorites: Vec::new(),
+            auto_mode: false,
         }
     }
 }
@@ -210,6 +213,7 @@ mod tests {
         assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
         assert!(s.close_to_tray, "旧设置文件没有这一项时默认最小化到托盘");
         assert_eq!((s.latency_alert(), s.relay_alert()), (None, None), "新增的提醒默认关闭");
+        assert!(!s.auto_mode, "自动切换模式默认关闭");
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
     }

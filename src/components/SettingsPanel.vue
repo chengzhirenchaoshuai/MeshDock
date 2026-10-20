@@ -171,7 +171,7 @@ function saveGateway(value: string) {
     <UiCard title="在家识别" :icon="House">
       <p class="text-sm">家里路由器地址</p>
       <p class="mt-0.5 text-xs text-muted">
-        本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示，但不会自动切换。
+        本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示；开启下面的“自动切换”后会自动改过来。
       </p>
       <!-- 输入框单独一行 -->
       <input
@@ -198,6 +198,15 @@ function saveGateway(value: string) {
         </button>
       </p>
       <p v-else class="mt-3 border-t border-line pt-3 text-xs text-muted">当前读不到默认网关，设备页会改为手动标记。</p>
+      <label class="mt-3 flex cursor-pointer items-center gap-4 border-t border-line pt-3">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm">自动切换在家 / 出门模式</p>
+          <p class="mt-0.5 text-xs text-muted">
+            按默认网关识别到回家或出门（连续两次刷新结果一致）后，模式不对就自动切换一次，并发通知告知。之后手动改的模式会保留，直到位置再次变化；读不到网关、只能手动标记时不自动切换。
+          </p>
+        </div>
+        <UiSwitch :model-value="settings.autoMode" @update:model-value="patch({ autoMode: $event })" />
+      </label>
     </UiCard>
 
     <!-- 通知 -->

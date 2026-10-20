@@ -7,8 +7,15 @@ use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
 impl Monitor {
-    /// 检查路径变化和模式开错，需要时发通知。关闭通知时仍然更新判断状态，重新打开后不会补发旧变化
-    pub(super) fn notify_changes(&self, app: &AppHandle, overview: &Overview, settings: &Settings) {
+    /// 检查路径变化和模式开错，需要时发通知。关闭通知时仍然更新判断状态，重新打开后不会补发旧变化。
+    /// auto_switching：本轮已开始自动切换模式，不再提示“模式开错”
+    pub(super) fn notify_changes(
+        &self,
+        app: &AppHandle,
+        overview: &Overview,
+        settings: &Settings,
+        auto_switching: bool,
+    ) {
         let now = Instant::now();
         let mut messages = Vec::new();
         {
@@ -52,7 +59,9 @@ impl Monitor {
             ));
         }
         let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes);
-        if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch) {
+        if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch)
+            && !auto_switching
+        {
             let (title, body) = m.message();
             messages.push((title.into(), body.into()));
         }

@@ -423,8 +423,11 @@ pub fn save_settings(
     if saved.refresh_secs != old.refresh_secs || saved.sample_minutes != old.sample_minutes {
         // 间隔改了，立即按新间隔重新计时
         monitor.intervals_changed();
-    } else if saved.home_gateway != old.home_gateway || saved.at_home != old.at_home {
-        // 家里网关或手动标记变了，立即重新识别位置
+    } else if saved.home_gateway != old.home_gateway
+        || saved.at_home != old.at_home
+        || saved.auto_mode != old.auto_mode
+    {
+        // 家里网关、手动标记或自动切换变了，立即重新识别位置
         monitor.wake();
     }
     if saved.theme != old.theme
