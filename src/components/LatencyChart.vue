@@ -6,7 +6,7 @@ const DAY = 24 * 3600 * 1000;
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { ConnKind, Sample } from "../api";
-import { clock, formatLatency, kindLabel, latencyStats } from "../format";
+import { clock, formatLatency, kindLabel, latencyStats, timeTicks } from "../format";
 
 /**
  * 延迟图：直连实线、中继虚线，没有回应画成底部灰色短竖线。
@@ -91,23 +91,14 @@ const when = (ms: number) => {
 };
 
 /** 时间刻度：24 小时每 6 小时一格，更长时每天一格 */
-const ticks = computed(() => {
-  if (!props.axis) return [];
-  const step = props.span <= DAY ? 6 * 3600 * 1000 : DAY;
-  const out: { at: number; label: string }[] = [];
-  // 按本地时间对齐到整点 / 零点
-  const first = new Date(start.value);
-  if (step === DAY) first.setHours(24, 0, 0, 0);
-  else first.setHours(Math.ceil(first.getHours() / 6) * 6, 0, 0, 0);
-  for (let t = first.getTime(); t <= props.now; t += step) {
-    const d = new Date(t);
-    out.push({
-      at: t,
-      label: step === DAY ? `${d.getMonth() + 1}/${d.getDate()}` : `${String(d.getHours()).padStart(2, "0")}:00`,
-    });
-  }
-  return out;
-});
+const ticks = computed(() => (props.axis ? timeTicks(start.value, props.now) : []));
+
+/** 刻度文字居中对准刻度线；贴近两端时改为靠边对齐，免得被裁掉 */
+function tickStyle(at: number) {
+  const pct = (x(at) / W) * 100;
+  const shift = pct < 4 ? "0" : pct > 96 ? "-100%" : "-50%";
+  return { left: `${pct}%`, transform: `translateX(${shift})` };
+}
 
 // ---------- 悬停：竖线 + 提示 ----------
 const hover = ref<Sample | null>(null);
@@ -210,8 +201,8 @@ const hoverText = computed(() => {
       <span
         v-for="t in ticks"
         :key="t.at"
-        class="absolute -translate-x-1/2 whitespace-nowrap"
-        :style="{ left: `${(x(t.at) / W) * 100}%` }"
+        class="absolute whitespace-nowrap"
+        :style="tickStyle(t.at)"
       >
         {{ t.label }}
       </span>

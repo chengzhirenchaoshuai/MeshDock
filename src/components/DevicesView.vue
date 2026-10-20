@@ -50,7 +50,7 @@ const emit = defineEmits<{
   ok: [text: string];
   error: [text: string];
   /** 保存设置（备注、收藏改了） */
-  save: [settings: Settings];
+  save: [change: Partial<Settings>];
 }>();
 
 const overview = computed(() => props.snapshot?.overview ?? null);
@@ -66,7 +66,7 @@ const marks = computed<PeerMarks>(() => ({
 }));
 
 function saveMarks(m: PeerMarks) {
-  if (props.settings) emit("save", { ...props.settings, deviceNotes: m.notes, favorites: m.favorites });
+  emit("save", { deviceNotes: m.notes, favorites: m.favorites });
 }
 
 /** 1.102.4-t1a2b3c-g4d5e6f → 1.102.4 */

@@ -12,6 +12,7 @@ import {
   latencyStats,
   measureLine,
   timeAgo,
+  timeTicks,
   usageTone,
 } from "./format";
 
@@ -189,5 +190,24 @@ describe("latencyStats", () => {
     // 19 个有回应的测量：95% 位置是第 19 个，即最大值
     expect(r.p95).toBe(40);
     expect(r.relayRatio).toBeCloseTo(1 / 19);
+  });
+});
+
+describe("timeTicks", () => {
+  const at = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m).getTime();
+
+  it("24 小时：从起点之后的第一个 6 小时整点开始，不画到起点之前", () => {
+    const ticks = timeTicks(at(19, 12, 47), at(20, 12, 47));
+    expect(ticks.map((t) => t.label)).toEqual(["18:00", "00:00", "06:00", "12:00"]);
+    expect(ticks[0].at).toBe(at(19, 18));
+  });
+
+  it("起点正好在整点时包含起点", () => {
+    expect(timeTicks(at(19, 12), at(20, 12)).map((t) => t.label)).toEqual(["12:00", "18:00", "00:00", "06:00", "12:00"]);
+  });
+
+  it("7 天：每天零点一格", () => {
+    const ticks = timeTicks(at(13, 12, 47), at(20, 12, 47));
+    expect(ticks.map((t) => t.label)).toEqual(["10/14", "10/15", "10/16", "10/17", "10/18", "10/19", "10/20"]);
   });
 });

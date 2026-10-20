@@ -178,3 +178,27 @@ export function latencyStats(samples: Sample[]): LatencyStats {
     relayRatio: n ? relay / n : null,
   };
 }
+
+const HOUR_MS = 3600 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** 图表时间刻度：跨度不超过 1 天时每 6 小时一格（标“HH:00”），更长时每天零点一格（标“月/日”）；只取 [start, end] 之内的 */
+export function timeTicks(start: number, end: number): { at: number; label: string }[] {
+  const daily = end - start > DAY_MS;
+  const step = daily ? DAY_MS : 6 * HOUR_MS;
+  // 按本地时间对齐到整点 / 零点；起点不在整点时（如 12:47 对齐成 12:00）会早于起点，顺延一格
+  const first = new Date(start);
+  if (daily) first.setHours(0, 0, 0, 0);
+  else first.setHours(Math.floor(first.getHours() / 6) * 6, 0, 0, 0);
+  let t = first.getTime();
+  if (t < start) t += step;
+  const out: { at: number; label: string }[] = [];
+  for (; t <= end; t += step) {
+    const d = new Date(t);
+    out.push({
+      at: t,
+      label: daily ? `${d.getMonth() + 1}/${d.getDate()}` : `${String(d.getHours()).padStart(2, "0")}:00`,
+    });
+  }
+  return out;
+}

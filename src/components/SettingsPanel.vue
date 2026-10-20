@@ -29,7 +29,7 @@ const props = defineProps<{
   appUpdate: AppUpdateState | null;
 }>();
 const emit = defineEmits<{
-  save: [settings: Settings];
+  save: [change: Partial<Settings>];
   togglePref: [pref: PrefSwitch, on: boolean, ok: string];
   /** 切换账户成功：带回新快照 */
   switched: [snapshot: Snapshot, name: string];
@@ -60,9 +60,9 @@ async function openRelease() {
   }
 }
 
-/** 改一项，整体保存 */
+/** 改一项，由 App 合并到最新设置后整体保存 */
 function patch(change: Partial<Settings>) {
-  if (props.settings) emit("save", { ...props.settings, ...change });
+  emit("save", change);
 }
 
 // ---------- 家里网关 ----------

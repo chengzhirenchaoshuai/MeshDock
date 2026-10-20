@@ -190,14 +190,21 @@ function togglePref(pref: PrefSwitch, on: boolean, ok: string) {
 
 /** 读不到网关时的手动标记 */
 function updateAtHome(atHome: true | null) {
-  if (settings.value) updateSettings({ ...settings.value, atHome });
+  updateSettings({ atHome });
 }
 
-async function updateSettings(next: Settings) {
+/** 改设置：先合并到本地最新值再整体保存，连续快速修改时后一次不会拿旧值覆盖前一次 */
+async function updateSettings(change: Partial<Settings>) {
+  if (!settings.value) return;
+  const next = { ...settings.value, ...change };
+  settings.value = next;
   try {
-    settings.value = await saveSettings(next);
+    const saved = await saveSettings(next);
+    // 保存期间又有新的修改时，以本地更新的为准
+    if (settings.value === next) settings.value = saved;
   } catch (e) {
     showError(`保存失败：${String(e)}`);
+    settings.value = await getSettings().catch(() => settings.value);
   }
 }
 
