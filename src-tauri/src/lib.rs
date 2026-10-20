@@ -24,7 +24,7 @@ use history::HistoryStore;
 use monitor::Monitor;
 use paths::AppPaths;
 use settings::SettingsStore;
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::ManagerExt;
 use tray::PendingMode;
 
@@ -83,6 +83,7 @@ pub fn run() {
             ));
             app.manage(paths);
             app.manage(PendingMode::default());
+            app.manage(commands::DroppedFiles::default());
             if let Err(e) = sync_autostart(app.handle(), settings.launch_on_boot) {
                 applog::error(e);
             }
@@ -118,6 +119,7 @@ pub fn run() {
             commands::set_exit_node,
             commands::set_pref_switch,
             commands::send_files,
+            commands::send_dropped,
             commands::get_profiles,
             commands::get_serve_rules,
             commands::add_serve_rule,
@@ -134,6 +136,10 @@ pub fn run() {
         ])
         // 点击关闭按钮：默认只隐藏到托盘（真正退出走托盘菜单）；设置中关闭了该项时直接退出
         .on_window_event(|win, event| {
+            // 拖进窗口的文件：先记下路径，前端判断落在哪张设备卡片上后来取
+            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
+                win.app_handle().state::<commands::DroppedFiles>().set(paths.clone());
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let app = win.app_handle();
                 if app.state::<SettingsStore>().get().close_to_tray {

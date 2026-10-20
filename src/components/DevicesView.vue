@@ -4,8 +4,10 @@ import { LoaderCircle, Unplug } from "@lucide/vue";
 import {
   openRustdesk,
   openSsh,
+  sendDropped,
   sendFiles,
   type CliError,
+  type SendResult,
   type Device,
   type History,
   type PingRecord,
@@ -80,10 +82,12 @@ async function launch(open: (arg: string) => Promise<void>, arg: string) {
 /** 正在发送的设备 id */
 const sending = ref(new Set<string>());
 
-async function sendTo(id: string) {
+/** 发送文件：send 为 sendFiles（选文件）或 sendDropped（拖到卡片上的文件），取消选择时返回 null */
+async function sendTo(id: string, send: (id: string) => Promise<SendResult | null> = sendFiles) {
+  if (sending.value.has(id)) return;
   sending.value = new Set(sending.value).add(id);
   try {
-    const r = await sendFiles(id);
+    const r = await send(id);
     if (r) {
       const what = r.files.length === 1 ? r.files[0] : `${r.files.length} 个文件`;
       emit("ok", `已把 ${what} 发给 ${r.device}`);
@@ -193,7 +197,9 @@ async function sendTo(id: string) {
       @test="emit('test', $event)"
       @ssh="launch(openSsh, $event)"
       @rustdesk="launch(openRustdesk, $event)"
-      @send="sendTo"
+      @send="sendTo($event)"
+      @drop="sendTo($event, sendDropped)"
+      @drop-miss="emit('error', '把文件拖到在线设备的卡片上才能发送')"
     />
   </template>
 </template>

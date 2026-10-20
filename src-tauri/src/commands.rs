@@ -9,6 +9,9 @@ use crate::paths::AppPaths;
 use crate::report;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::PendingMode;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
 
 /// 取最近一次快照；还没有时立即读取一次
@@ -190,6 +193,88 @@ pub struct SendResult {
     files: Vec<String>,
 }
 
+/// 按设备 id 找到在线设备，返回名称和组网 IP；离线或不在组网中时报错
+fn send_target(monitor: &Monitor, id: &str) -> Result<(String, String), CliError> {
+    monitor.online_peer(id).ok_or_else(|| CliError {
+        kind: ErrorKind::Failed,
+        message: "设备离线或已不在组网中，不能发送".into(),
+        raw: id.to_string(),
+    })
+}
+
+/// 用 Taildrop 发送文件并记日志，返回发出的文件名
+async fn send_paths(name: String, ip: &str, files: &[PathBuf]) -> Result<SendResult, CliError> {
+    let names: Vec<String> = files
+        .iter()
+        .filter_map(|f| f.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .collect();
+    applog::info(format!("开始向 {name} 发送 {} 个文件", files.len()));
+    cli::send_files(files, ip).await.inspect_err(|e| {
+        applog::error(format!("向 {name} 发送文件失败：{}\n{}", e.message, e.raw))
+    })?;
+    applog::info(format!("已向 {name} 发送：{}", names.join("、")));
+    Ok(SendResult {
+        device: name,
+        files: names,
+    })
+}
+
+/// 拖进窗口的文件多久内有效：前端收到拖放事件后马上会来取，过期的不再发送
+const DROP_TTL: Duration = Duration::from_secs(10);
+
+/// 最近一次拖进窗口的文件。拖放事件由后端记下路径，前端只告诉后端落在哪台设备上，文件路径不经过前端
+#[derive(Default)]
+pub struct DroppedFiles(Mutex<Option<(Instant, Vec<PathBuf>)>>);
+
+impl DroppedFiles {
+    pub fn set(&self, paths: Vec<PathBuf>) {
+        *self.0.lock().unwrap() = Some((Instant::now(), paths));
+    }
+
+    /// 取走未过期的文件；取过一次就清空，避免重复发送
+    fn take(&self) -> Option<Vec<PathBuf>> {
+        let (at, paths) = self.0.lock().unwrap().take()?;
+        (at.elapsed() < DROP_TTL).then_some(paths)
+    }
+}
+
+/// Taildrop 只能发文件：拖进来的有文件夹（或已不存在）时报错
+fn check_dropped(paths: &[PathBuf]) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("没有拖入文件".into());
+    }
+    match paths.iter().find(|p| !p.is_file()) {
+        Some(p) if p.is_dir() => Err(format!(
+            "只能发送文件，不能发送文件夹（{}）",
+            p.file_name().unwrap_or_default().to_string_lossy()
+        )),
+        Some(p) => Err(format!("找不到文件 {}", p.display())),
+        None => Ok(()),
+    }
+}
+
+/// 把刚拖到设备卡片上的文件用 Taildrop 发给这台设备
+#[tauri::command]
+pub async fn send_dropped(
+    id: String,
+    monitor: State<'_, Monitor>,
+    dropped: State<'_, DroppedFiles>,
+) -> Result<SendResult, CliError> {
+    let files = dropped.take().ok_or_else(|| CliError {
+        kind: ErrorKind::Failed,
+        message: "没有找到刚拖入的文件，请重新拖一次".into(),
+        raw: String::new(),
+    })?;
+    check_dropped(&files).map_err(|message| CliError {
+        kind: ErrorKind::Failed,
+        message,
+        raw: String::new(),
+    })?;
+    let (name, ip) = send_target(&monitor, &id)?;
+    send_paths(name, &ip, &files).await
+}
+
 /// 弹出选文件对话框，把选中的文件用 Taildrop 发给设备。
 /// 文件路径只在后端取得，不经过前端
 #[tauri::command]
@@ -199,11 +284,7 @@ pub async fn send_files(
     monitor: State<'_, Monitor>,
 ) -> Result<Option<SendResult>, CliError> {
     use tauri_plugin_dialog::DialogExt;
-    let (name, ip) = monitor.online_peer(&id).ok_or_else(|| CliError {
-        kind: ErrorKind::Failed,
-        message: "设备离线或已不在组网中，不能发送".into(),
-        raw: id.clone(),
-    })?;
+    let (name, ip) = send_target(&monitor, &id)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     let mut dialog = app.dialog().file().set_title(format!("选择要发给 {name} 的文件"));
     if let Some(window) = app.get_webview_window("main") {
@@ -215,24 +296,11 @@ pub async fn send_files(
     let Some(picked) = rx.await.ok().flatten() else {
         return Ok(None);
     };
-    let files: Vec<std::path::PathBuf> = picked
+    let files: Vec<PathBuf> = picked
         .into_iter()
         .filter_map(|f| f.into_path().ok())
         .collect();
-    let names: Vec<String> = files
-        .iter()
-        .filter_map(|f| f.file_name())
-        .map(|n| n.to_string_lossy().into_owned())
-        .collect();
-    applog::info(format!("开始向 {name} 发送 {} 个文件", files.len()));
-    cli::send_files(&files, &ip).await.inspect_err(|e| {
-        applog::error(format!("向 {name} 发送文件失败：{}\n{}", e.message, e.raw))
-    })?;
-    applog::info(format!("已向 {name} 发送：{}", names.join("、")));
-    Ok(Some(SendResult {
-        device: name,
-        files: names,
-    }))
+    send_paths(name, &ip, &files).await.map(Some)
 }
 
 /// 本机当前的共享规则（tailscale serve）
@@ -489,4 +557,32 @@ pub async fn disconnect(app: AppHandle, monitor: State<'_, Monitor>) -> Result<S
         .inspect_err(|e| applog::error(format!("断开组网失败：{}\n{}", e.message, e.raw)))?;
     applog::info("已断开组网");
     Ok(monitor.refresh_reread(&app).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 拖入的只能是文件() {
+        let dir = std::env::temp_dir().join(format!("meshdock-drop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert!(check_dropped(std::slice::from_ref(&file)).is_ok());
+        assert!(check_dropped(&[]).is_err());
+        let err = check_dropped(&[file.clone(), dir.clone()]).unwrap_err();
+        assert!(err.contains("文件夹"), "{err}");
+        assert!(check_dropped(&[dir.join("没有这个文件")]).unwrap_err().contains("找不到"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn 拖入的文件只能取一次() {
+        let dropped = DroppedFiles::default();
+        assert_eq!(dropped.take(), None);
+        dropped.set(vec![PathBuf::from("a")]);
+        assert_eq!(dropped.take(), Some(vec![PathBuf::from("a")]));
+        assert_eq!(dropped.take(), None);
+    }
 }

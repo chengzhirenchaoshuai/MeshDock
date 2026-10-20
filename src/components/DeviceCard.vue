@@ -28,6 +28,8 @@ const props = defineProps<{
   history?: Sample[];
   /** 正在给这台设备发文件 */
   sending?: boolean;
+  /** 正有文件拖到这张卡片上 */
+  dropTarget?: boolean;
 }>();
 const emit = defineEmits<{ copy: [ip: string]; test: []; ssh: [alias: string]; rustdesk: [ip: string]; send: [] }>();
 
@@ -66,7 +68,18 @@ const timeLine = computed(() => {
   <article
     class="ui-card ui-card-interactive flex flex-col gap-3 overflow-hidden p-4 pl-5"
     :class="{ 'opacity-75': offline }"
+    :style="dropTarget ? { borderColor: 'var(--md-accent)', boxShadow: '0 0 0 3px var(--md-accent-soft)' } : undefined"
   >
+    <!-- 拖文件到卡片上：提示松开即发送 -->
+    <div
+      v-if="dropTarget"
+      class="pointer-events-none absolute inset-0 z-10 grid place-items-center backdrop-blur-[2px]"
+      style="background: color-mix(in srgb, var(--md-surface) 78%, transparent)"
+    >
+      <span class="inline-flex items-center gap-2 text-sm font-medium text-accent">
+        <Send class="size-4" />松开发给 {{ device.name }}
+      </span>
+    </div>
     <!-- 左侧状态色条 -->
     <span
       class="absolute inset-y-0 left-0 w-[3px] transition-colors duration-300"
@@ -155,7 +168,13 @@ ${pingLine.raw}` : pingLine.text"
           :icon="Send"
           :loading="sending"
           :disabled="sending || offline"
-          :title="offline ? '设备离线' : sending ? '正在发送…' : '选择文件，用 Taildrop 发给这台设备（对方的官方客户端会存到“下载”文件夹）'"
+          :title="
+            offline
+              ? '设备离线'
+              : sending
+                ? '正在发送…'
+                : '选择文件，用 Taildrop 发给这台设备（对方的官方客户端会存到“下载”文件夹）。也可以直接把文件拖到这张卡片上'
+          "
           @click="emit('send')"
         >
           发文件

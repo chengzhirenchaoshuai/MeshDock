@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { Network, Search } from "@lucide/vue";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Device, History, PingRecord } from "../api";
 import { filterPeers, isFiltering, type PeerFilter } from "../devices";
 import DeviceCard from "./DeviceCard.vue";
@@ -25,6 +26,10 @@ const emit = defineEmits<{
   ssh: [alias: string];
   rustdesk: [ip: string];
   send: [id: string];
+  /** 文件拖到了这台设备的卡片上 */
+  drop: [id: string];
+  /** 文件拖到了列表里，但没落在在线设备的卡片上 */
+  dropMiss: [];
 }>();
 
 const filter = ref<PeerFilter>({ query: "", onlineOnly: false });
@@ -34,10 +39,47 @@ const filtering = computed(() => isFiltering(filter.value));
 function clearFilter() {
   filter.value = { query: "", onlineOnly: false };
 }
+
+// ---------- 把文件拖到设备卡片上发送 ----------
+const root = ref<HTMLElement | null>(null);
+/** 拖动时光标下的设备 id，卡片高亮 */
+const dropId = ref<string | null>(null);
+
+/**
+ * 拖放坐标（物理像素）下的设备卡片：不在列表里（如在其他标签页、组网断开）返回 undefined，
+ * 在列表里但不在可接收的卡片上返回 null
+ */
+function cardAt(pos: { x: number; y: number }): string | null | undefined {
+  const ratio = window.devicePixelRatio || 1;
+  const el = document.elementFromPoint(pos.x / ratio, pos.y / ratio);
+  if (props.disabled || !el || !root.value?.contains(el)) return undefined;
+  return el.closest<HTMLElement>("[data-drop-id]")?.dataset.dropId ?? null;
+}
+
+let unlisten: (() => void) | undefined;
+onMounted(async () => {
+  unlisten = await getCurrentWebview().onDragDropEvent(({ payload: p }) => {
+    if (p.type === "enter" || p.type === "over") {
+      dropId.value = cardAt(p.position) ?? null;
+    } else if (p.type === "drop") {
+      dropId.value = null;
+      const id = cardAt(p.position);
+      if (id) emit("drop", id);
+      else if (id === null) emit("dropMiss");
+    } else {
+      dropId.value = null;
+    }
+  });
+});
+onUnmounted(() => unlisten?.());
 </script>
 
 <template>
-  <section :class="{ 'pointer-events-none opacity-50 select-none': disabled }" :aria-disabled="disabled">
+  <section
+    ref="root"
+    :class="{ 'pointer-events-none opacity-50 select-none': disabled }"
+    :aria-disabled="disabled"
+  >
     <h2 class="mb-2.5 flex items-center gap-2 text-xs font-semibold tracking-wide text-muted">
       组网设备<span class="num font-normal text-faint">
         <template v-if="filtering">{{ shown.length }} / </template>{{ peers.length }}
@@ -79,6 +121,8 @@ function clearFilter() {
         :rustdesk="rustdesk"
         :history="history[d.id]"
         :sending="sending.has(d.id)"
+        :data-drop-id="d.conn.kind === 'offline' || sending.has(d.id) ? undefined : d.id"
+        :drop-target="dropId === d.id"
         @copy="emit('copy', $event)"
         @test="emit('test', d)"
         @ssh="emit('ssh', $event)"

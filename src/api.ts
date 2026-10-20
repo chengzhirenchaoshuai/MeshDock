@@ -212,6 +212,8 @@ export interface SendResult {
 }
 /** 弹出选文件对话框并用 Taildrop 发给设备；取消选择时返回 null */
 export const sendFiles = (id: string) => invoke<SendResult | null>("send_files", { id });
+/** 把刚拖到设备卡片上的文件发给这台设备（文件路径由后端记下，不经过前端） */
+export const sendDropped = (id: string) => invoke<SendResult>("send_dropped", { id });
 
 /** 共享方式：网页或任意 TCP（HTTPS 需要证书，Headscale 不支持） */
 export type ServeKind = "http" | "tcp";
