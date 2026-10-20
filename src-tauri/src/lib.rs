@@ -2,6 +2,7 @@ mod applog;
 mod aumid;
 mod classify;
 mod cli;
+mod client_setup;
 mod commands;
 mod gateway;
 mod history;
@@ -126,6 +127,9 @@ pub fn run() {
             commands::open_ssh,
             commands::open_rustdesk,
             commands::device_sysinfo,
+            commands::get_client_setup,
+            commands::set_tray_autostart,
+            commands::set_remote_unattended,
         ])
         // 点击关闭按钮：默认只隐藏到托盘（真正退出走托盘菜单）；设置中关闭了该项时直接退出
         .on_window_event(|win, event| {

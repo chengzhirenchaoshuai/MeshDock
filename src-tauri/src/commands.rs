@@ -345,6 +345,50 @@ pub async fn device_sysinfo(alias: String) -> Result<crate::sysinfo::SysInfo, St
     crate::sysinfo::fetch(&alias).await
 }
 
+/// 读取官方客户端的无人值守和托盘自启：alias 为 None 读本机，否则经 ssh 读对方（Windows）
+#[tauri::command]
+pub async fn get_client_setup(
+    alias: Option<String>,
+) -> Result<crate::client_setup::ClientSetup, String> {
+    crate::client_setup::get(alias.as_deref()).await
+}
+
+/// 开关官方托盘的开机自启：本机经 UAC 提权，对方经 ssh（需管理员账户）
+#[tauri::command]
+pub async fn set_tray_autostart(
+    alias: Option<String>,
+    on: bool,
+) -> Result<crate::client_setup::ClientSetup, String> {
+    let who = alias.as_deref().unwrap_or("本机");
+    let result = match alias.as_deref() {
+        None => crate::client_setup::set_local_tray(on).await,
+        Some(a) => crate::client_setup::set_remote(a, None, Some(on)).await,
+    };
+    match &result {
+        Ok(_) => crate::applog::info(format!("{who}：官方托盘开机自启已{}", on_off(on))),
+        Err(e) => crate::applog::error(format!("{who}：修改官方托盘开机自启失败：{e}")),
+    }
+    result
+}
+
+/// 经 ssh 开关对方的无人值守（本机用组网选项里的开关）
+#[tauri::command]
+pub async fn set_remote_unattended(
+    alias: String,
+    on: bool,
+) -> Result<crate::client_setup::ClientSetup, String> {
+    let result = crate::client_setup::set_remote(&alias, Some(on), None).await;
+    match &result {
+        Ok(_) => crate::applog::info(format!("{alias}：无人值守已{}", on_off(on))),
+        Err(e) => crate::applog::error(format!("{alias}：修改无人值守失败：{e}")),
+    }
+    result
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on { "开启" } else { "关闭" }
+}
+
 /// 用 RustDesk 直连设备的组网 IP（对方需在 RustDesk 中允许 IP 直接访问）
 #[tauri::command]
 pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {

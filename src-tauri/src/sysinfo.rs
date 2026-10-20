@@ -193,6 +193,14 @@ fn parse_ports(lines: &[&str]) -> Vec<u16> {
 
 /// 经 ssh 采集。BatchMode：需要密码或确认主机指纹时直接失败，不会卡住等输入
 pub async fn fetch(alias: &str) -> Result<SysInfo, String> {
+    let stdout = ssh_output(alias, SCRIPT, TIMEOUT).await?;
+    parse(&stdout).ok_or_else(|| "没有采集到信息，对方可能不是 Linux".into())
+}
+
+/// 经 ssh <别名> 在远端执行一条命令，返回标准输出。
+/// BatchMode：需要密码或确认主机指纹时直接失败，不会卡住等输入；ssh 自己失败（退出码 255）时报错，
+/// 远端命令的退出码不算失败，由调用方按输出判断
+pub async fn ssh_output(alias: &str, remote: &str, timeout: Duration) -> Result<String, String> {
     if !crate::launch::valid_alias(alias) {
         return Err(format!("SSH 别名含有不支持的字符：{alias}"));
     }
@@ -204,7 +212,7 @@ pub async fn fetch(alias: &str) -> Result<SysInfo, String> {
         "-o",
         "ConnectTimeout=5",
         alias,
-        SCRIPT,
+        remote,
     ])
     .stdin(Stdio::null())
     .stdout(Stdio::piped())
@@ -213,21 +221,20 @@ pub async fn fetch(alias: &str) -> Result<SysInfo, String> {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
-    let out = match tokio::time::timeout(TIMEOUT, cmd.output()).await {
-        Err(_) => return Err(format!("ssh {alias} 超过 {} 秒没有返回", TIMEOUT.as_secs())),
+    let out = match tokio::time::timeout(timeout, cmd.output()).await {
+        Err(_) => return Err(format!("ssh {alias} 超过 {} 秒没有返回", timeout.as_secs())),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             return Err("找不到 ssh 命令，请安装 Windows 自带的 OpenSSH 客户端".into());
         }
         Ok(Err(e)) => return Err(format!("执行 ssh 失败：{e}")),
         Ok(Ok(out)) => out,
     };
-    let stdout = String::from_utf8_lossy(&out.stdout);
     // 退出码 255 是 ssh 自己失败（连不上、认证失败），其余是远端命令的退出码，不影响已采到的内容
     if out.status.code() == Some(255) {
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(format!("ssh {alias} 连接失败：{}", err.trim()));
     }
-    parse(&stdout).ok_or_else(|| "没有采集到信息，对方可能不是 Linux".into())
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 #[cfg(test)]

@@ -6,6 +6,7 @@ import LatencyChart from "./LatencyChart.vue";
 import { connTone, formatBytes, measureLine, timeAgo } from "../format";
 import OsIcon from "./OsIcon.vue";
 import SysInfoPanel from "./SysInfoPanel.vue";
+import ClientSetupPanel from "./ClientSetupPanel.vue";
 import StatusPill from "./ui/StatusPill.vue";
 import UiButton from "./ui/UiButton.vue";
 
@@ -178,6 +179,13 @@ ${pingLine.raw}` : pingLine.text"
         :alias="device.sshAlias"
         :device-id="device.id"
         :now="now"
+        :offline="offline"
+      />
+      <!-- 官方客户端的无人值守与托盘自启：只对能 ssh 的 Windows 设备 -->
+      <ClientSetupPanel
+        v-if="device.sshAlias && device.os === 'windows'"
+        :alias="device.sshAlias"
+        :name="device.name"
         :offline="offline"
       />
     </template>

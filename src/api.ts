@@ -255,6 +255,26 @@ export const openSsh = (alias: string) => invoke<void>("open_ssh", { alias });
 /** 用 RustDesk 直连组网 IP */
 export const openRustdesk = (ip: string) => invoke<void>("open_rustdesk", { ip });
 
+/** 官方客户端的启动方式 */
+export interface ClientSetup {
+  /** 无人值守：没有用户登录、托盘退出时组网仍保持连接 */
+  unattended: boolean;
+  /** 启动文件夹里有官方托盘的快捷方式 */
+  shortcut: boolean;
+  /** 开机时启动官方托盘 */
+  trayAutostart: boolean;
+  /** 执行的账户是管理员（远端时即 ssh 登录的账户） */
+  admin: boolean;
+}
+/** alias 为 null 读本机，否则经 ssh 读对方（Windows） */
+export const getClientSetup = (alias: string | null) => invoke<ClientSetup>("get_client_setup", { alias });
+/** 开关官方托盘的开机自启：本机会弹出 UAC 确认框，对方需 ssh 账户是管理员 */
+export const setTrayAutostart = (alias: string | null, on: boolean) =>
+  invoke<ClientSetup>("set_tray_autostart", { alias, on });
+/** 经 ssh 开关对方的无人值守 */
+export const setRemoteUnattended = (alias: string, on: boolean) =>
+  invoke<ClientSetup>("set_remote_unattended", { alias, on });
+
 /** 一个分区的用量 */
 export interface Disk {
   mount: string;
