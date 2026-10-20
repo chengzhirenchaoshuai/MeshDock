@@ -25,6 +25,10 @@ pub struct Settings {
     pub refresh_secs: u64,
     /// 后台测速间隔（分钟），只能取 SAMPLE_CHOICES 中的值
     pub sample_minutes: u64,
+    /// 延迟持续偏高提醒的阈值（毫秒），0 为关闭；只能取 LATENCY_ALERT_CHOICES 中的值
+    pub latency_alert_ms: u64,
+    /// 持续走中继多久后提醒（分钟），0 为关闭；只能取 RELAY_ALERT_CHOICES 中的值
+    pub relay_alert_minutes: u64,
 }
 
 /// 状态刷新间隔的可选值（秒）
@@ -33,6 +37,10 @@ pub const REFRESH_CHOICES: [u64; 4] = [5, 10, 30, 60];
 pub const SAMPLE_CHOICES: [u64; 4] = [1, 2, 5, 10];
 /// 配色方案的可选值，第一个是默认值；与前端 style.css 中的 data-palette 一致
 pub const PALETTE_CHOICES: [&str; 5] = ["aurora", "ocean", "neon", "jade", "graphite"];
+/// 延迟提醒阈值的可选值（毫秒），0 为关闭
+pub const LATENCY_ALERT_CHOICES: [u64; 4] = [0, 100, 200, 500];
+/// 持续走中继提醒的可选值（分钟），0 为关闭
+pub const RELAY_ALERT_CHOICES: [u64; 4] = [0, 10, 30, 60];
 /// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
 const HIDDEN_MIN_SECS: u64 = 30;
 
@@ -48,6 +56,8 @@ impl Default for Settings {
             close_to_tray: true,
             refresh_secs: 10,
             sample_minutes: 5,
+            latency_alert_ms: 0,
+            relay_alert_minutes: 0,
         }
     }
 }
@@ -65,6 +75,12 @@ impl Settings {
         if !PALETTE_CHOICES.contains(&self.palette.as_str()) {
             self.palette = default.palette;
         }
+        if !LATENCY_ALERT_CHOICES.contains(&self.latency_alert_ms) {
+            self.latency_alert_ms = default.latency_alert_ms;
+        }
+        if !RELAY_ALERT_CHOICES.contains(&self.relay_alert_minutes) {
+            self.relay_alert_minutes = default.relay_alert_minutes;
+        }
         self
     }
 
@@ -81,6 +97,16 @@ impl Settings {
     /// 后台测速间隔
     pub fn sample_interval(&self) -> Duration {
         Duration::from_secs(self.sample_minutes * 60)
+    }
+
+    /// 延迟提醒阈值；关闭时为 None
+    pub fn latency_alert(&self) -> Option<f64> {
+        (self.latency_alert_ms > 0).then_some(self.latency_alert_ms as f64)
+    }
+
+    /// 持续走中继多久后提醒；关闭时为 None
+    pub fn relay_alert(&self) -> Option<Duration> {
+        (self.relay_alert_minutes > 0).then(|| Duration::from_secs(self.relay_alert_minutes * 60))
     }
 }
 
@@ -164,6 +190,7 @@ mod tests {
         assert!(s.notify);
         assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
         assert!(s.close_to_tray, "旧设置文件没有这一项时默认最小化到托盘");
+        assert_eq!((s.latency_alert(), s.relay_alert()), (None, None), "新增的提醒默认关闭");
         let s: Settings = serde_json::from_str(r#"{ "theme": "dark" }"#).unwrap();
         assert_eq!(s.theme, ThemeMode::Dark);
     }
@@ -192,6 +219,19 @@ mod tests {
         let s = s.sanitized();
         assert_eq!((s.refresh_secs, s.sample_minutes), (60, 1));
         assert_eq!(s.sample_interval(), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn 提醒阈值不在可选范围时改回关闭() {
+        let s: Settings =
+            serde_json::from_str(r#"{ "latencyAlertMs": 200, "relayAlertMinutes": 30 }"#).unwrap();
+        let s = s.sanitized();
+        assert_eq!(s.latency_alert(), Some(200.0));
+        assert_eq!(s.relay_alert(), Some(Duration::from_secs(1800)));
+        let s: Settings =
+            serde_json::from_str(r#"{ "latencyAlertMs": 7, "relayAlertMinutes": 5 }"#).unwrap();
+        let s = s.sanitized();
+        assert_eq!((s.latency_alert_ms, s.relay_alert_minutes), (0, 0));
     }
 
     #[test]

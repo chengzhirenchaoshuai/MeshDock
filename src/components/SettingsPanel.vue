@@ -43,6 +43,9 @@ const themes: { value: ThemeMode; label: string; icon: Component }[] = [
 /** 可选值与后端 settings.rs 中的 REFRESH_CHOICES、SAMPLE_CHOICES 一致 */
 const refreshChoices = [5, 10, 30, 60].map((s) => ({ value: s, label: `${s} 秒` }));
 const sampleChoices = [1, 2, 5, 10].map((m) => ({ value: m, label: `${m} 分钟` }));
+/** 与 settings.rs 中的 LATENCY_ALERT_CHOICES、RELAY_ALERT_CHOICES 一致，0 为关闭 */
+const latencyAlertChoices = [0, 100, 200, 500].map((ms) => ({ value: ms, label: ms ? `${ms} ms` : "关闭" }));
+const relayAlertChoices = [0, 10, 30, 60].map((m) => ({ value: m, label: m ? `${m} 分钟` : "关闭" }));
 
 /** 改一项，整体保存 */
 function patch(change: Partial<Settings>) {
@@ -199,15 +202,41 @@ function saveGateway(value: string) {
 
     <!-- 通知 -->
     <UiCard title="通知" :icon="Bell">
-      <label class="flex cursor-pointer items-center gap-4">
-        <div class="min-w-0 flex-1">
-          <p class="text-sm">发送 Windows 通知</p>
-          <p class="mt-0.5 text-xs text-muted">
-            设备在直连和中继之间变化（新路径持续 30 秒以上，打洞时的短暂中继不算），或在家 / 出门模式与所在位置不一致时提醒。
-          </p>
+      <div class="flex flex-col divide-y divide-line">
+        <label class="flex cursor-pointer items-center gap-4 pb-3">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">发送 Windows 通知</p>
+            <p class="mt-0.5 text-xs text-muted">
+              设备在直连和中继之间变化（新路径持续 30 秒以上，打洞时的短暂中继不算），或在家 / 出门模式与所在位置不一致时提醒。下面两项提醒也受这个开关控制。
+            </p>
+          </div>
+          <UiSwitch :model-value="settings.notify" @update:model-value="patch({ notify: $event })" />
+        </label>
+        <div class="flex items-center gap-4 py-3" :class="{ 'opacity-50': !settings.notify }">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">延迟持续偏高时提醒</p>
+            <p class="mt-0.5 text-xs text-muted">某台设备连续 3 次后台测速都超过这个值时提醒一次，回落后才会再次提醒。</p>
+          </div>
+          <UiSegmented
+            mono
+            :options="latencyAlertChoices"
+            :model-value="settings.latencyAlertMs"
+            @update:model-value="patch({ latencyAlertMs: $event })"
+          />
         </div>
-        <UiSwitch :model-value="settings.notify" @update:model-value="patch({ notify: $event })" />
-      </label>
+        <div class="flex items-center gap-4 pt-3" :class="{ 'opacity-50': !settings.notify }">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm">长时间走中继时提醒</p>
+            <p class="mt-0.5 text-xs text-muted">某台设备连续走中继超过这么久时提醒一次（中继限速约 500 KB/s），恢复直连后重新计时。</p>
+          </div>
+          <UiSegmented
+            mono
+            :options="relayAlertChoices"
+            :model-value="settings.relayAlertMinutes"
+            @update:model-value="patch({ relayAlertMinutes: $event })"
+          />
+        </div>
+      </div>
     </UiCard>
 
     <!-- 启动与关闭 -->

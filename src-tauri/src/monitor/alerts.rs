@@ -1,13 +1,14 @@
-//! 需要发通知的变化：路径在直连和中继之间变化、出口设备离线、模式开错
+//! 需要发通知的变化：路径在直连和中继之间变化、持续走中继、出口设备离线、模式开错
 use super::{Monitor, Overview, snapshot::exit_offline};
 use crate::notify::{Mismatch, PathClass};
+use crate::settings::Settings;
 use std::time::Instant;
 use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
 impl Monitor {
     /// 检查路径变化和模式开错，需要时发通知。关闭通知时仍然更新判断状态，重新打开后不会补发旧变化
-    pub(super) fn notify_changes(&self, app: &AppHandle, overview: &Overview, enabled: bool) {
+    pub(super) fn notify_changes(&self, app: &AppHandle, overview: &Overview, settings: &Settings) {
         let now = Instant::now();
         let mut messages = Vec::new();
         {
@@ -27,6 +28,23 @@ impl Monitor {
                 messages.push((title, body));
             }
         }
+        if let Some(limit) = settings.relay_alert() {
+            let mut relay = self.inner.relay.lock().unwrap();
+            for d in &overview.peers {
+                let on_relay = PathClass::of(d.conn.kind) == Some(PathClass::Relay);
+                let Some(elapsed) = relay.observe(&d.id, on_relay, now, limit) else {
+                    continue;
+                };
+                let body = match &d.conn.hint {
+                    Some(hint) => format!("{}。{hint}", d.conn.label),
+                    None => d.conn.label.clone(),
+                };
+                messages.push((
+                    format!("{} 已经走中继 {} 分钟", d.name, elapsed.as_secs() / 60),
+                    body,
+                ));
+            }
+        }
         if let Some(name) = self.exit_went_offline(overview) {
             messages.push((
                 format!("出口设备 {name} 离线了"),
@@ -38,13 +56,8 @@ impl Monitor {
             let (title, body) = m.message();
             messages.push((title.into(), body.into()));
         }
-        if !enabled {
-            return;
-        }
-        for (title, body) in messages {
-            if let Err(e) = app.notification().builder().title(title).body(body).show() {
-                crate::applog::error(format!("发送通知失败：{e}"));
-            }
+        if settings.notify {
+            send_all(app, messages);
         }
     }
 
@@ -54,5 +67,14 @@ impl Monitor {
         let mut last = self.inner.exit_offline.lock().unwrap();
         let was = std::mem::replace(&mut *last, offline.is_some());
         offline.filter(|_| !was)
+    }
+}
+
+/// 逐条发送 Windows 通知，失败记入日志
+pub(super) fn send_all(app: &AppHandle, messages: Vec<(String, String)>) {
+    for (title, body) in messages {
+        if let Err(e) = app.notification().builder().title(title).body(body).show() {
+            crate::applog::error(format!("发送通知失败：{e}"));
+        }
     }
 }

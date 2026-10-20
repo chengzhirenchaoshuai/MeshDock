@@ -1,6 +1,6 @@
-//! 路径变化与模式开错的通知：判断逻辑是纯函数，发送通知由调用方完成
+//! 路径变化、模式开错、延迟偏高、持续中继的通知：判断逻辑是纯函数，发送通知由调用方完成
 use crate::classify::ConnKind;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// 新路径持续多久才通知，避免“先中继、几秒后直连”的正常打洞过程误报
@@ -126,9 +126,87 @@ impl MismatchWatcher {
     }
 }
 
+/// 延迟连续多少次后台测速超过阈值才提醒，避免偶尔一次抖动就打扰
+pub const LATENCY_STREAK: usize = 3;
+
+/// 延迟持续偏高：连续 LATENCY_STREAK 次超过阈值时提醒一次，回落到阈值以下后重新计数。
+/// 没有回应的测量不计入也不清零（离线由路径和出口通知负责）
+#[derive(Default)]
+pub struct LatencyWatcher {
+    streak: HashMap<String, usize>,
+    alerted: HashSet<String>,
+}
+
+impl LatencyWatcher {
+    /// 记录一次测量，需要提醒时返回 true
+    pub fn observe(&mut self, id: &str, ms: Option<f64>, threshold: f64) -> bool {
+        let Some(ms) = ms else {
+            return false;
+        };
+        if ms <= threshold {
+            self.streak.remove(id);
+            self.alerted.remove(id);
+            return false;
+        }
+        let n = self.streak.entry(id.to_string()).or_default();
+        *n += 1;
+        *n >= LATENCY_STREAK && self.alerted.insert(id.to_string())
+    }
+}
+
+/// 持续走中继：连续走中继超过设定时长时提醒一次，离开中继（直连、离线、空闲）后重新计时
+#[derive(Default)]
+pub struct RelayWatcher {
+    since: HashMap<String, Instant>,
+    alerted: HashSet<String>,
+}
+
+impl RelayWatcher {
+    /// 记录一次观察，需要提醒时返回已走中继的时长
+    pub fn observe(&mut self, id: &str, relay: bool, now: Instant, limit: Duration) -> Option<Duration> {
+        if !relay {
+            self.since.remove(id);
+            self.alerted.remove(id);
+            return None;
+        }
+        let since = *self.since.entry(id.to_string()).or_insert(now);
+        let elapsed = now.duration_since(since);
+        (elapsed >= limit && self.alerted.insert(id.to_string())).then_some(elapsed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 延迟连续三次超标才提醒_回落后重新计数() {
+        let mut w = LatencyWatcher::default();
+        assert!(!w.observe("a", Some(300.0), 200.0));
+        assert!(!w.observe("a", None, 200.0)); // 没有回应：不计入也不清零
+        assert!(!w.observe("a", Some(250.0), 200.0));
+        assert!(w.observe("a", Some(260.0), 200.0));
+        assert!(!w.observe("a", Some(400.0), 200.0), "持续超标不重复提醒");
+        assert!(!w.observe("a", Some(20.0), 200.0));
+        assert!(!w.observe("a", Some(300.0), 200.0));
+        assert!(!w.observe("a", Some(300.0), 200.0));
+        assert!(w.observe("a", Some(300.0), 200.0), "回落后再次连续超标会重新提醒");
+        assert!(!w.observe("b", Some(200.0), 200.0), "等于阈值不算超标");
+    }
+
+    #[test]
+    fn 持续中继超过时长提醒一次() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let limit = Duration::from_secs(600);
+        let mut w = RelayWatcher::default();
+        assert_eq!(w.observe("a", true, at(0), limit), None);
+        assert_eq!(w.observe("a", true, at(599), limit), None);
+        assert_eq!(w.observe("a", true, at(601), limit), Some(Duration::from_secs(601)));
+        assert_eq!(w.observe("a", true, at(9999), limit), None);
+        assert_eq!(w.observe("a", false, at(10000), limit), None);
+        assert_eq!(w.observe("a", true, at(10001), limit), None, "离开中继后重新计时");
+    }
 
     const D: Option<PathClass> = Some(PathClass::Direct);
     const R: Option<PathClass> = Some(PathClass::Relay);

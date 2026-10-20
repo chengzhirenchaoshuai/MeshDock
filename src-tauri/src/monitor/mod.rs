@@ -12,7 +12,7 @@ use crate::cli;
 use crate::gateway;
 use crate::launch;
 use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status};
-use crate::notify::{MismatchWatcher, PathWatcher};
+use crate::notify::{LatencyWatcher, MismatchWatcher, PathWatcher, RelayWatcher};
 use crate::router;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
@@ -59,6 +59,9 @@ struct Inner {
     /// 路径变化与模式开错的判断状态（用于发通知）
     paths: Mutex<PathWatcher>,
     mismatch: Mutex<MismatchWatcher>,
+    /// 持续走中继、延迟持续偏高的判断状态
+    relay: Mutex<RelayWatcher>,
+    latency: Mutex<LatencyWatcher>,
     wake: Notify,
     /// 唤醒后台测速循环（测速间隔改了时）
     history_wake: Notify,
@@ -111,6 +114,8 @@ impl Monitor {
                 net_infos: Mutex::new(None),
                 paths: Mutex::new(PathWatcher::default()),
                 mismatch: Mutex::new(MismatchWatcher::default()),
+                relay: Mutex::new(RelayWatcher::default()),
+                latency: Mutex::new(LatencyWatcher::default()),
                 wake: Notify::new(),
                 history_wake: Notify::new(),
                 refreshing: tokio::sync::Mutex::new(()),
@@ -399,7 +404,7 @@ impl Monitor {
                 self.enrich(&mut overview).await;
                 let settings = app.state::<SettingsStore>().get();
                 overview.location = locate(&settings);
-                self.notify_changes(app, &overview, settings.notify);
+                self.notify_changes(app, &overview, &settings);
                 Snapshot {
                     overview: Some(overview),
                     error: None,

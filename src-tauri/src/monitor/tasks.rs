@@ -1,9 +1,11 @@
-//! 后台任务：延迟历史采样、官方客户端新版本检查
+//! 后台任务：延迟历史采样（及延迟偏高提醒）、官方客户端新版本检查
 use super::{Monitor, now_ms};
 use crate::classify::ConnKind;
 use crate::cli;
 use crate::history::{HistoryStore, Sample};
+use crate::notify::LATENCY_STREAK;
 use crate::settings::SettingsStore;
+use std::collections::HashMap;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -59,7 +61,7 @@ impl Monitor {
 
     /// 并发 ping 所有在线设备，结果记入历史
     pub(super) async fn sample_history(&self, app: &AppHandle) {
-        let targets: Vec<(String, String)> = self
+        let targets: Vec<(String, String, String)> = self
             .latest()
             .and_then(|s| s.overview)
             // 组网断开时设备列表是断开前的旧信息，测出来的“无回应”会把小图画错，跳过
@@ -70,7 +72,7 @@ impl Monitor {
             .filter(|d| d.conn.kind != ConnKind::Offline)
             .filter_map(|d| {
                 let ip = d.ips.iter().find(|a| !a.contains(':'))?.clone();
-                Some((d.id, ip))
+                Some((d.id, d.name, ip))
             })
             .collect();
         if targets.is_empty() {
@@ -79,7 +81,9 @@ impl Monitor {
         let regions = self.regions().await;
         let local = self.local();
         let mut set = tokio::task::JoinSet::new();
-        for (id, ip) in targets {
+        let names: HashMap<String, String> =
+            targets.iter().map(|(id, name, _)| (id.clone(), name.clone())).collect();
+        for (id, _, ip) in targets {
             let (regions, local) = (regions.clone(), local.clone());
             set.spawn(async move { (id, cli::ping(&ip, &regions, &local).await) });
         }
@@ -90,6 +94,51 @@ impl Monitor {
                 samples.push((id, Sample::from_ping(now_ms(), &r)));
             }
         }
+        self.check_latency(app, &samples, &names);
         record_history(app, samples);
+    }
+
+    /// 后台测速后检查延迟是否持续偏高，需要时发通知。关闭通知时仍然更新判断状态
+    fn check_latency(
+        &self,
+        app: &AppHandle,
+        samples: &[(String, Sample)],
+        names: &HashMap<String, String>,
+    ) {
+        let settings = app.state::<SettingsStore>().get();
+        let Some(threshold) = settings.latency_alert() else {
+            return;
+        };
+        let mut watcher = self.inner.latency.lock().unwrap();
+        let messages: Vec<(String, String)> = samples
+            .iter()
+            .filter(|(id, s)| watcher.observe(id, s.ms, threshold))
+            .map(|(id, s)| {
+                let name = names.get(id).map_or("未知设备", String::as_str);
+                let path = s.kind.map(kind_label).unwrap_or("路径未知");
+                (
+                    format!("{name} 延迟持续偏高"),
+                    format!(
+                        "最近 {LATENCY_STREAK} 次测速都超过 {threshold} ms，最近一次 {:.0} ms（{path}）。",
+                        s.ms.unwrap_or_default()
+                    ),
+                )
+            })
+            .collect();
+        drop(watcher);
+        if settings.notify {
+            super::alerts::send_all(app, messages);
+        }
+    }
+}
+
+/// 实测路径的简短中文（延迟历史只记了路径类型）
+fn kind_label(kind: ConnKind) -> &'static str {
+    match kind {
+        ConnKind::Lan => "局域网直连",
+        ConnKind::Ipv6 => "IPv6 直连",
+        ConnKind::Public => "公网直连",
+        ConnKind::Relay | ConnKind::PeerRelay => "中继",
+        _ => "路径未知",
     }
 }

@@ -178,6 +178,10 @@ export interface Settings {
   refreshSecs: number;
   /** 后台测速间隔（分钟）：1 / 2 / 5 / 10 */
   sampleMinutes: number;
+  /** 延迟持续偏高提醒的阈值（毫秒）：0（关闭）/ 100 / 200 / 500 */
+  latencyAlertMs: number;
+  /** 持续走中继多久后提醒（分钟）：0（关闭）/ 10 / 30 / 60 */
+  relayAlertMinutes: number;
 }
 
 /** 保存全部设置并立即生效（主题、开机自启） */
