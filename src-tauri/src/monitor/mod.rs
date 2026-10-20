@@ -8,6 +8,7 @@ mod tasks;
 pub use snapshot::{Device, Location, Overview, Snapshot, SubnetRoute};
 pub use tasks::record_history;
 
+use crate::app_update::UpdateState;
 use crate::classify::{self, Conn, ConnKind, LocalNet, Regions};
 use crate::cli;
 use crate::gateway;
@@ -81,6 +82,8 @@ struct Inner {
     exit_offline: Mutex<bool>,
     /// 官方客户端的新版本号（后台定期检查）
     client_update: Mutex<Option<String>>,
+    /// MeshDock 自身的新版本检查结果（与官方客户端一起定期检查）
+    app_update: Mutex<UpdateState>,
 }
 
 /// RustDesk 是否安装，多久重新检测一次
@@ -128,6 +131,7 @@ impl Monitor {
                 prefs: Ttl::new(PREFS_TTL),
                 exit_offline: Mutex::new(false),
                 client_update: Mutex::new(None),
+                app_update: Mutex::new(UpdateState::default()),
             }),
         }
     }
@@ -151,12 +155,14 @@ impl Monitor {
                 }
             }
         });
-        // 官方客户端新版本：启动后立即检查，之后每 6 小时一次；查不到时 10 分钟后重试
+        // 官方客户端和 MeshDock 自身的新版本：启动后立即检查，之后每 6 小时一次；查不到时 10 分钟后重试
         let this = self.clone();
         let update_app = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(tasks::UPDATE_FIRST_DELAY).await;
             loop {
+                // MeshDock 自身的新版本一起检查，查不到不影响重试间隔
+                this.check_app_update(&update_app).await;
                 let wait = if this.check_client_update(&update_app).await {
                     tasks::UPDATE_INTERVAL
                 } else {
@@ -325,6 +331,11 @@ impl Monitor {
     /// 按设备 id 在最近的快照里找到设备
     fn peer(&self, id: &str) -> Option<Device> {
         self.latest()?.overview?.peers.into_iter().find(|d| d.id == id)
+    }
+
+    /// MeshDock 自身的新版本检查结果
+    pub fn app_update(&self) -> UpdateState {
+        self.inner.app_update.lock().unwrap().clone()
     }
 
     /// 按设备 id 找到设备名称（导出文件命名用）
@@ -511,6 +522,7 @@ impl Monitor {
             rustdesk: self.inner.rustdesk.get_or(launch::rustdesk_installed),
             routers: Vec::new(),
             client_update: self.inner.client_update.lock().unwrap().clone(),
+            app_update: self.inner.app_update.lock().unwrap().clone(),
         }
     }
 

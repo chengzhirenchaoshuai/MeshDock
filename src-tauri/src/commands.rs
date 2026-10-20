@@ -516,6 +516,18 @@ fn on_off(on: bool) -> &'static str {
     if on { "开启" } else { "关闭" }
 }
 
+/// 在浏览器中打开 MeshDock 新版本的发布页（地址取自后端的检查结果，不由前端传入）
+#[tauri::command]
+pub fn open_app_release(app: AppHandle, monitor: State<'_, Monitor>) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let crate::app_update::UpdateState::Available(u) = monitor.app_update() else {
+        return Err("现在没有可用的新版本".into());
+    };
+    app.opener()
+        .open_url(u.url, None::<&str>)
+        .map_err(|e| format!("打开发布页失败：{e}"))
+}
+
 /// 用 RustDesk 直连设备的组网 IP（对方需在 RustDesk 中允许 IP 直接访问）
 #[tauri::command]
 pub fn open_rustdesk(ip: String, app: AppHandle) -> Result<(), String> {

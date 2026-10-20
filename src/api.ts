@@ -90,7 +90,19 @@ export interface Overview {
   routers: RouterHealth[];
   /** 官方客户端有新版本时为新版本号 */
   clientUpdate: string | null;
+  /** MeshDock 自身的新版本检查结果 */
+  appUpdate: AppUpdateState;
 }
+
+/** MeshDock 自身的新版本检查结果（经本机已登录的 gh 查询私有仓库的发布） */
+export type AppUpdateState =
+  | { state: "unknown" }
+  | { state: "latest" }
+  | { state: "available"; version: string; url: string }
+  | { state: "unavailable"; reason: string };
+
+/** 在浏览器中打开新版本的发布页 */
+export const openAppRelease = () => invoke<void>("open_app_release");
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
 

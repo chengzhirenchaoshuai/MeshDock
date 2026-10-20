@@ -529,6 +529,7 @@ mod tests {
             rustdesk: false,
             routers: vec![],
             client_update: None,
+            app_update: Default::default(),
         }
     }
 

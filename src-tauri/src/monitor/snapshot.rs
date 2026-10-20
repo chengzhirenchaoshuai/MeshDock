@@ -54,6 +54,8 @@ pub struct Overview {
     pub routers: Vec<RouterHealth>,
     /// 官方客户端有新版本时为新版本号
     pub client_update: Option<String>,
+    /// MeshDock 自身的新版本检查结果
+    pub app_update: crate::app_update::UpdateState,
 }
 
 /// 在不在家：优先按默认网关自动识别，读不到网关时用手动标记

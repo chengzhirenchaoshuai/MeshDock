@@ -1,3 +1,4 @@
+mod app_update;
 mod applog;
 mod aumid;
 mod classify;
@@ -131,6 +132,7 @@ pub fn run() {
             commands::get_app_info,
             commands::open_ssh,
             commands::open_rustdesk,
+            commands::open_app_release,
             commands::device_sysinfo,
             commands::get_client_setup,
             commands::set_tray_autostart,

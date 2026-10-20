@@ -3,7 +3,9 @@ import { onMounted, ref, type Component } from "vue";
 import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
 import {
   getAppInfo,
+  openAppRelease,
   type AppInfo,
+  type AppUpdateState,
   type LocalPrefs,
   type PrefSwitch,
   type Settings,
@@ -23,6 +25,8 @@ const props = defineProps<{
   gateways: string[];
   prefs: LocalPrefs | null;
   prefBusy: boolean;
+  /** MeshDock 自身的新版本检查结果 */
+  appUpdate: AppUpdateState | null;
 }>();
 const emit = defineEmits<{
   save: [settings: Settings];
@@ -46,6 +50,15 @@ const sampleChoices = [1, 2, 5, 10].map((m) => ({ value: m, label: `${m} 分钟`
 /** 与 settings.rs 中的 LATENCY_ALERT_CHOICES、RELAY_ALERT_CHOICES 一致，0 为关闭 */
 const latencyAlertChoices = [0, 100, 200, 500].map((ms) => ({ value: ms, label: ms ? `${ms} ms` : "关闭" }));
 const relayAlertChoices = [0, 10, 30, 60].map((m) => ({ value: m, label: m ? `${m} 分钟` : "关闭" }));
+
+const openError = ref<string | null>(null);
+async function openRelease() {
+  try {
+    await openAppRelease();
+  } catch (e) {
+    openError.value = String(e);
+  }
+}
 
 /** 改一项，整体保存 */
 function patch(change: Partial<Settings>) {
@@ -279,6 +292,19 @@ function saveGateway(value: string) {
       <dl class="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-6 gap-y-1.5">
         <dt>版本</dt>
         <dd class="num text-fg">{{ info.version }}{{ info.debug ? "（开发版）" : "" }}</dd>
+        <dt>新版本</dt>
+        <dd>
+          <template v-if="appUpdate?.state === 'available'">
+            <span class="font-medium text-accent">有新版 {{ appUpdate.version }}</span>
+            <button type="button" class="ml-2 text-accent hover:underline" @click="openRelease">打开下载页</button>
+          </template>
+          <template v-else-if="appUpdate?.state === 'latest'">已是最新版（每 6 小时检查一次）</template>
+          <span v-else-if="appUpdate?.state === 'unavailable'" :title="appUpdate.reason">
+            无法检查：需要安装并登录 GitHub 命令行 gh（仓库是私有的）
+          </span>
+          <template v-else>还没检查</template>
+        </dd>
+        <template v-if="openError"><dt /><dd class="text-error">{{ openError }}</dd></template>
         <dt>运行方式</dt>
         <dd>{{ info.portable ? "便携模式（数据在程序旁的 data 文件夹）" : "数据保存在用户文件夹" }}</dd>
         <dt>设置文件</dt>

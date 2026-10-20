@@ -316,6 +316,12 @@ onUnmounted(() => {
         >
           <component :is="t.icon" class="size-4" :class="{ 'text-accent': tab === t.id }" />
           {{ t.label }}
+          <!-- MeshDock 有新版本：设置标签上加小圆点 -->
+          <span
+            v-if="t.id === 'settings' && overview?.appUpdate.state === 'available'"
+            class="size-1.5 rounded-full bg-accent"
+            title="MeshDock 有新版本"
+          />
           <span
             class="absolute inset-x-2 -bottom-px h-[3px] rounded-full transition-all duration-200"
             :class="tab === t.id ? 'opacity-100' : 'scale-x-50 opacity-0'"
@@ -336,6 +342,7 @@ onUnmounted(() => {
         :gateways="overview?.location.gateways ?? []"
         :prefs="overview?.prefs ?? null"
         :pref-busy="prefBusy"
+        :app-update="overview?.appUpdate ?? null"
         @save="updateSettings"
         @toggle-pref="togglePref"
         @switched="(s, name) => ((snapshot = s), showOk(`已切换到 ${name}`))"

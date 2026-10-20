@@ -1,6 +1,7 @@
-//! 后台任务：延迟历史采样（及延迟偏高提醒）、官方客户端新版本检查
+//! 后台任务：延迟历史采样（及延迟偏高提醒）、官方客户端和 MeshDock 自身的新版本检查
 use super::{Monitor, now_ms};
 use crate::classify::ConnKind;
+use crate::app_update::UpdateState;
 use crate::cli;
 use crate::history::{DAY_MS, HistoryStore, Sample};
 use crate::notify::LATENCY_STREAK;
@@ -30,6 +31,39 @@ pub(super) const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 pub(super) const UPDATE_RETRY: Duration = Duration::from_secs(10 * 60);
 
 impl Monitor {
+    /// 检查 MeshDock 自身有没有新版本；发现新的版本号时发一次通知。查不到时记下原因（设置页显示），只在原因变化时记日志
+    pub(super) async fn check_app_update(&self, app: &AppHandle) {
+        let current = app.package_info().version.to_string();
+        let next = match crate::app_update::check(&current).await {
+            Ok(Some(u)) => UpdateState::Available(u),
+            Ok(None) => UpdateState::Latest,
+            Err(reason) => UpdateState::Unavailable { reason },
+        };
+        let previous = std::mem::replace(&mut *self.inner.app_update.lock().unwrap(), next.clone());
+        if previous == next {
+            return;
+        }
+        self.wake();
+        match &next {
+            UpdateState::Available(u) => {
+                crate::applog::info(format!("MeshDock 有新版本 {}", u.version));
+                if app.state::<SettingsStore>().get().notify {
+                    super::alerts::send_all(
+                        app,
+                        vec![(
+                            format!("MeshDock 有新版本 {}", u.version),
+                            "打开 MeshDock 的“设置”页，在最下面点“打开下载页”。".into(),
+                        )],
+                    );
+                }
+            }
+            UpdateState::Unavailable { reason } => {
+                crate::applog::info(format!("无法检查 MeshDock 新版本：{reason}"));
+            }
+            _ => {}
+        }
+    }
+
     /// 检查官方客户端有没有新版本；发现新的版本号时发一次通知。查不到（如断网）时保持原结果并返回 false
     pub(super) async fn check_client_update(&self, app: &AppHandle) -> bool {
         let Ok(info) = cli::version_upstream().await else {
