@@ -209,7 +209,7 @@ pub fn compose(input: &Input) -> String {
                     line(format!("- [{}] {}", level_text(f.level), f.text));
                 }
                 if let Some(ms) = r.relay_ms {
-                    line(format!("- 到广州中继 {ms:.0} ms"));
+                    line(format!("- 到{}中继 {ms:.0} ms", r.relay_name));
                 }
                 let model = [
                     r.device_model.as_deref(),

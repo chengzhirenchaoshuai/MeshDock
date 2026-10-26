@@ -3,9 +3,6 @@ use crate::classify::Regions;
 use crate::model::{Netcheck, non_empty};
 use serde::Serialize;
 
-/// 自建中继的区域编号
-const SELF_HOSTED_REGION_ID: &str = "999";
-
 /// 结论的级别，前端据此选颜色和图标
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -144,7 +141,7 @@ pub fn report(n: &Netcheck, regions: &Regions, at_ms: i64) -> Report {
             name: regions.name_by_id(id),
             ms: ns_to_ms(*ns),
             preferred: preferred.as_deref() == Some(id.as_str()),
-            self_hosted: id == SELF_HOSTED_REGION_ID,
+            self_hosted: regions.is_self_hosted_id(id),
         })
         .collect();
     list.sort_by(|a, b| a.ms.total_cmp(&b.ms));
@@ -154,10 +151,15 @@ pub fn report(n: &Netcheck, regions: &Regions, at_ms: i64) -> Report {
             Level::Info,
             format!("到{}中继的延迟 {} ms", r.name, fmt_ms(r.ms)),
         )),
-        None => findings.push(finding(
+        None if regions.has_self_hosted() => findings.push(finding(
             Level::Warn,
-            "连不上广州中继，直连失败时设备之间可能不通",
+            format!(
+                "连不上{}中继，直连失败时设备之间可能不通",
+                regions.self_hosted_name()
+            ),
         )),
+        // 组网只用官方中继，没有自建中继可测
+        None => {}
     }
     if let Some(p) = list.iter().find(|r| r.preferred && !r.self_hosted) {
         findings.push(finding(
@@ -192,7 +194,7 @@ mod tests {
 
     fn regions() -> Regions {
         let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
-        Regions::from_derp_map(&map)
+        Regions::from_derp_map(&map, "广州")
     }
 
     fn texts(r: &Report) -> Vec<String> {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, type Component } from "vue";
-import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Sun } from "@lucide/vue";
+import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Server, Sun } from "@lucide/vue";
 import {
   getAppInfo,
   openAppRelease,
@@ -71,8 +71,9 @@ const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
 
 function saveGateway(value: string) {
   const v = value.trim();
-  if (!IPV4.test(v)) {
-    gatewayError.value = "请填写 IPv4 地址，例如 192.168.66.66";
+  // 清空表示不按网关识别位置
+  if (v && !IPV4.test(v)) {
+    gatewayError.value = "请填写 IPv4 地址，例如 192.168.1.1";
     return;
   }
   gatewayError.value = null;
@@ -184,13 +185,13 @@ function saveGateway(value: string) {
     <UiCard title="在家识别" :icon="House">
       <p class="text-sm">家里路由器地址</p>
       <p class="mt-0.5 text-xs text-muted">
-        本机的默认网关等于这个地址时，视为在家。模式和位置不一致时，设备页会提示；开启下面的“自动切换”后会自动改过来。
+        本机的默认网关等于这个地址时，视为在家。在家时点下面的“当前默认网关”即可填入；留空则不自动识别位置。模式和位置不一致时，设备页会提示；开启下面的“自动切换”后会自动改过来。组网里没有子网路由器时，这一项用不到。
       </p>
       <!-- 输入框单独一行 -->
       <input
         class="ui-input num mt-2.5 block w-56 text-sm select-text"
         :value="settings.homeGateway"
-        placeholder="例如 192.168.66.66"
+        placeholder="例如 192.168.1.1"
         @change="saveGateway(($event.target as HTMLInputElement).value)"
         @keydown.enter="($event.target as HTMLInputElement).blur()"
       />
@@ -220,6 +221,22 @@ function saveGateway(value: string) {
         </div>
         <UiSwitch :model-value="settings.autoMode" @update:model-value="patch({ autoMode: $event })" />
       </label>
+    </UiCard>
+
+    <!-- 自建中继的显示名 -->
+    <UiCard title="自建中继" :icon="Server">
+      <p class="text-sm">显示名称</p>
+      <p class="mt-0.5 text-xs text-muted">
+        设备走自建中继时显示为“中继（经 这个名称）”，例如填中继服务器所在的城市。留空时用控制端下发的名称，没有就显示“自建”。
+      </p>
+      <input
+        class="ui-input mt-2.5 block w-56 text-sm select-text"
+        :value="settings.relayName"
+        maxlength="16"
+        placeholder="例如 广州"
+        @change="patch({ relayName: ($event.target as HTMLInputElement).value.trim() })"
+        @keydown.enter="($event.target as HTMLInputElement).blur()"
+      />
     </UiCard>
 
     <!-- 通知 -->

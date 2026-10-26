@@ -9,9 +9,9 @@ impl Monitor {
     /// 返回 true 表示已开始切换，本轮不再发“模式开错”的通知
     pub(super) fn auto_mode(&self, app: &AppHandle, overview: &Overview, settings: &Settings) -> bool {
         let mut auto = self.inner.auto_mode.lock().unwrap();
-        // 只在组网运行、并且位置是按网关自动识别（不是手动标记）时处理
+        // 只在组网运行、有子网路由器、并且位置是按网关自动识别（不是手动标记）时处理
         let running = overview.backend_state.as_deref() == Some("Running");
-        if !settings.auto_mode || !running {
+        if !settings.auto_mode || !running || overview.subnet_routes.is_empty() {
             if !settings.auto_mode {
                 auto.reset();
             }

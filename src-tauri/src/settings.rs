@@ -10,8 +10,10 @@ use std::time::Duration;
 pub struct Settings {
     /// 手动标记“我现在在家”：只在读不到网关、无法自动识别时使用
     pub at_home: Option<bool>,
-    /// 家里路由器的地址：默认网关等于它即为在家
+    /// 家里路由器的地址：默认网关等于它即为在家；留空表示还没设置，不自动识别位置
     pub home_gateway: String,
+    /// 自建中继在界面上的显示名（如“广州”）；留空时用 derp-map 里的名称，没有名称时显示“自建”
+    pub relay_name: String,
     /// 外观：跟随系统 / 浅色 / 深色
     pub theme: ThemeMode,
     /// 配色方案（品牌色、背景色调），只能取 PALETTE_CHOICES 中的值；与浅色 / 深色互相独立
@@ -50,6 +52,8 @@ pub const LATENCY_ALERT_CHOICES: [u64; 4] = [0, 100, 200, 500];
 pub const RELAY_ALERT_CHOICES: [u64; 4] = [0, 10, 30, 60];
 /// 备注最长多少个字符
 pub const NOTE_MAX_CHARS: usize = 40;
+/// 中继显示名最长多少个字符
+pub const RELAY_NAME_MAX_CHARS: usize = 16;
 /// 窗口隐藏时只需更新托盘，刷新间隔至少这么长
 const HIDDEN_MIN_SECS: u64 = 30;
 
@@ -57,7 +61,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             at_home: None,
-            home_gateway: "192.168.66.66".into(),
+            home_gateway: String::new(),
+            relay_name: String::new(),
             theme: ThemeMode::default(),
             palette: PALETTE_CHOICES[0].into(),
             launch_on_boot: false,
@@ -93,6 +98,8 @@ impl Settings {
         if !RELAY_ALERT_CHOICES.contains(&self.relay_alert_minutes) {
             self.relay_alert_minutes = default.relay_alert_minutes;
         }
+        self.home_gateway = self.home_gateway.trim().to_string();
+        self.relay_name = self.relay_name.trim().chars().take(RELAY_NAME_MAX_CHARS).collect();
         // 备注去掉首尾空白、截到最长长度，空的不保存；收藏去重
         self.device_notes = std::mem::take(&mut self.device_notes)
             .into_iter()
@@ -208,7 +215,7 @@ mod tests {
         assert_eq!(s.at_home, Some(true));
         assert_eq!(s.theme, ThemeMode::System);
         assert!(!s.launch_on_boot);
-        assert_eq!(s.home_gateway, "192.168.66.66");
+        assert_eq!(s.home_gateway, "", "没设置过家里网关时不自动识别位置");
         assert!(s.notify);
         assert_eq!((s.refresh_secs, s.sample_minutes), (10, 5));
         assert!(s.close_to_tray, "旧设置文件没有这一项时默认最小化到托盘");

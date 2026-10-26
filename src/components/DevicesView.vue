@@ -140,7 +140,9 @@ async function sendTo(id: string, send: (id: string) => Promise<SendResult | nul
       </div>
     </div>
 
+    <!-- 没有子网路由器时在家 / 出门没有区别；子网路由还开着时仍显示，方便关掉 -->
     <ModePanel
+      v-if="overview.subnetRoutes.length > 0 || overview.acceptRoutes === true"
       class="mb-5"
       :overview="overview"
       :settings="settings"

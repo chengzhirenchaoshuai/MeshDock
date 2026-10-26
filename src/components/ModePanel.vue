@@ -30,7 +30,7 @@ const locationText = computed(() => {
     : `在外面（默认网关 ${l.gateways.join("、")}，不是家里的 ${l.homeGateway}）`;
 });
 
-/** 子网路由说明，例如“phone-router 的 192.168.66.0/24” */
+/** 子网路由说明，例如“home-router 的 192.168.1.0/24” */
 const routesText = computed(() => {
   const list = props.overview.subnetRoutes;
   if (list.length === 0) return "家里局域网";
@@ -79,7 +79,13 @@ const options = computed(() => [
         class="flex cursor-pointer items-center gap-2 rounded-ctl bg-subtle px-3 py-2 text-xs text-muted"
       >
         <MapPin class="size-3.5 shrink-0 text-accent" />
-        <span class="min-w-0 flex-1">我现在在家（读不到网关，请手动标记）</span>
+        <span class="min-w-0 flex-1">
+          我现在在家（{{
+            location.gateways.length === 0
+              ? "读不到网关，请手动标记"
+              : "还没设置家里路由器地址，可在“设置 → 在家识别”中选当前网关，之后自动识别"
+          }}）
+        </span>
         <UiSwitch :model-value="settings?.atHome === true" @update:model-value="emit('setAtHome', $event || null)" />
       </label>
       <!-- 在家却开着出门模式：2026-09-20 踩过的坑 -->

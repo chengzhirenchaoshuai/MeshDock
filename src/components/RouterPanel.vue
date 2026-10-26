@@ -22,7 +22,7 @@ const overall = computed(() => levelStyle[props.router.level === "info" ? "good"
 const meta = computed(() => {
   const r = props.router;
   return [
-    r.relayMs != null ? `到广州中继 ${formatLatency(r.relayMs)}` : null,
+    r.relayMs != null ? `到${r.relayName}中继 ${formatLatency(r.relayMs)}` : null,
     r.version ? `Tailscale ${r.version}` : null,
     r.deviceModel,
     r.osVersion ? `系统 ${r.osVersion}` : null,

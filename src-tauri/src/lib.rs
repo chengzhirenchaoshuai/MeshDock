@@ -95,6 +95,7 @@ pub fn run() {
                 applog::error(format!("登记通知身份失败：{e}"));
             }
             let monitor = Monitor::new();
+            monitor.set_relay_name(&settings.relay_name);
             app.manage(monitor.clone());
             tray::setup(app.handle())?;
             monitor.start(app.handle().clone());

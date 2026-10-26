@@ -58,7 +58,9 @@ impl Monitor {
                 "本机的上网流量都经它转发，现在可能上不了网。打开 MeshDock 换一台出口或停用出口。".into(),
             ));
         }
-        let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes);
+        // 组网里没有子网路由器时，在家 / 出门模式没有区别，不提醒
+        let mismatch = Mismatch::of(overview.location.at_home, overview.accept_routes)
+            .filter(|_| !overview.subnet_routes.is_empty());
         if let Some(m) = self.inner.mismatch.lock().unwrap().observe(mismatch)
             && !auto_switching
         {

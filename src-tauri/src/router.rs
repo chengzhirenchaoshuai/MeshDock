@@ -1,10 +1,8 @@
-//! 子网路由器（如手机 phone-router）的健康状态：出门时访问家里局域网全靠它
+//! 子网路由器的健康状态：出门时访问家里局域网全靠它
+use crate::classify::Regions;
 use crate::model::Hostinfo;
 use crate::netcheck::{Finding, Level};
 use serde::Serialize;
-
-/// 自建中继的区域编号
-const SELF_HOSTED_REGION_ID: &str = "999";
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -15,8 +13,10 @@ pub struct RouterHealth {
     /// 最严重的结论级别，决定卡片颜色
     pub level: Level,
     pub findings: Vec<Finding>,
-    /// 到广州中继的延迟（毫秒）
+    /// 到自建中继的延迟（毫秒）
     pub relay_ms: Option<f64>,
+    /// 自建中继的显示名，如“自建”或设置里起的“广州”
+    pub relay_name: String,
     /// Tailscale 版本（只取 1.102.4 这样的前半段）
     pub version: Option<String>,
     pub os_version: Option<String>,
@@ -47,6 +47,7 @@ pub fn health(
     routes: Vec<String>,
     last_seen_ms: Option<i64>,
     info: Option<&Hostinfo>,
+    regions: &Regions,
 ) -> RouterHealth {
     let routes_text = routes.join("、");
     let mut findings = Vec::new();
@@ -90,7 +91,12 @@ pub fn health(
             }
         }
     }
-    let relay_ms = net.and_then(|n| n.region_latency_ms(SELF_HOSTED_REGION_ID));
+    let relay_ms = net.and_then(|n| {
+        regions
+            .self_hosted_ids()
+            .iter()
+            .find_map(|id| n.region_latency_ms(id))
+    });
     let level = findings
         .iter()
         .map(|f| f.level)
@@ -103,6 +109,7 @@ pub fn health(
         level,
         findings,
         relay_ms,
+        relay_name: regions.self_hosted_name(),
         version: info
             .and_then(|h| h.ipn_version.as_deref())
             .map(|v| v.split('-').next().unwrap_or(v).to_string()),
@@ -133,11 +140,13 @@ mod tests {
             p.primary_routes.clone().unwrap(),
             None,
             infos.get(p.public_key.as_ref().unwrap()),
+            &Regions::default(),
         );
         assert_eq!(h.routes, ["192.168.66.0/24"]);
         assert_eq!(h.level, Level::Info); // 有 IPv6，对称型 NAT 只是说明
         assert_eq!(h.version.as_deref(), Some("1.102.4"));
         assert!((h.relay_ms.unwrap() - 19.1).abs() < 0.1);
+        assert_eq!(h.relay_name, "自建");
         assert!(h.findings.iter().any(|f| f.text.starts_with("有 IPv6")));
     }
 
@@ -157,6 +166,7 @@ mod tests {
             vec!["192.168.66.0/24".into()],
             None,
             Some(&info),
+            &Regions::default(),
         );
         assert_eq!(h.level, Level::Bad);
         assert!(
@@ -173,7 +183,7 @@ mod tests {
 
     #[test]
     fn 读不到上报信息() {
-        let h = health("r", true, vec!["10.0.0.0/24".into()], None, None);
+        let h = health("r", true, vec!["10.0.0.0/24".into()], None, None, &Regions::default());
         assert!(
             h.findings
                 .iter()

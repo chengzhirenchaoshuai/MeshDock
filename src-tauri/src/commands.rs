@@ -420,14 +420,16 @@ pub fn save_settings(
         .update(|s| *s = settings)
         .inspect_err(|e| applog::error(e))?;
     let monitor = app.state::<Monitor>();
+    monitor.set_relay_name(&saved.relay_name);
     if saved.refresh_secs != old.refresh_secs || saved.sample_minutes != old.sample_minutes {
         // 间隔改了，立即按新间隔重新计时
         monitor.intervals_changed();
     } else if saved.home_gateway != old.home_gateway
         || saved.at_home != old.at_home
         || saved.auto_mode != old.auto_mode
+        || saved.relay_name != old.relay_name
     {
-        // 家里网关、手动标记或自动切换变了，立即重新识别位置
+        // 家里网关、手动标记、自动切换或中继显示名变了，立即重新识别位置、刷新界面
         monitor.wake();
     }
     if saved.theme != old.theme

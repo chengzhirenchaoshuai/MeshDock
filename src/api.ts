@@ -176,8 +176,10 @@ export type ThemeMode = "system" | "light" | "dark";
 export interface Settings {
   /** 手动标记的“我在家”：true 在家，false 在外，null 没标记过 */
   atHome: boolean | null;
-  /** 家里路由器地址：默认网关等于它即为在家 */
+  /** 家里路由器地址：默认网关等于它即为在家；空表示还没设置 */
   homeGateway: string;
+  /** 自建中继的显示名（如“广州”），空时用 derp-map 里的名称或“自建” */
+  relayName: string;
   theme: ThemeMode;
   /** 配色方案，见 palette.ts 的 PALETTES；与浅色 / 深色互相独立 */
   palette: string;
@@ -356,7 +358,7 @@ export const buildReport = () => invoke<string>("build_report");
 /** 保存到“下载”文件夹并在资源管理器中选中，返回文件路径 */
 export const saveReport = (text: string) => invoke<string>("save_report", { text });
 
-/** 子网路由器（如手机 phone-router）的健康状态 */
+/** 子网路由器的健康状态 */
 export interface RouterHealth {
   name: string;
   online: boolean;
@@ -364,8 +366,10 @@ export interface RouterHealth {
   /** 最严重的结论级别 */
   level: Level;
   findings: Finding[];
-  /** 到广州中继的延迟（毫秒） */
+  /** 到自建中继的延迟（毫秒） */
   relayMs: number | null;
+  /** 自建中继的显示名 */
+  relayName: string;
   version: string | null;
   osVersion: string | null;
   deviceModel: string | null;

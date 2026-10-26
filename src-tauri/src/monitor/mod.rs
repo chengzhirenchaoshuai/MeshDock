@@ -50,6 +50,8 @@ pub struct Monitor {
 struct Inner {
     latest: Mutex<Option<Snapshot>>,
     regions: Mutex<Option<Arc<Regions>>>,
+    /// 设置里的自建中继显示名；改了之后重新生成区域表
+    relay_name: Mutex<String>,
     /// 中继区域表最近一次读取失败的时间，用于暂缓重试
     regions_failed_at: Mutex<Option<Instant>>,
     /// 最近一次读到的本机网络信息，测速时判断局域网 IPv6 也要用
@@ -114,6 +116,7 @@ impl Monitor {
             inner: Arc::new(Inner {
                 latest: Mutex::new(None),
                 regions: Mutex::new(None),
+                relay_name: Mutex::new(String::new()),
                 regions_failed_at: Mutex::new(None),
                 local: Mutex::new(Arc::default()),
                 active_since: Mutex::new(None),
@@ -227,6 +230,7 @@ impl Monitor {
         if let Some(r) = self.inner.regions.lock().unwrap().clone() {
             return r;
         }
+        let name = self.inner.relay_name.lock().unwrap().clone();
         let failed_recently = self
             .inner
             .regions_failed_at
@@ -234,18 +238,27 @@ impl Monitor {
             .unwrap()
             .is_some_and(|at| at.elapsed() < REGIONS_RETRY);
         if failed_recently {
-            return Arc::new(Regions::default());
+            return Arc::new(Regions::named(&name));
         }
         match cli::derp_map().await {
             Ok(map) => {
-                let r = Arc::new(Regions::from_derp_map(&map));
+                let r = Arc::new(Regions::from_derp_map(&map, &name));
                 *self.inner.regions.lock().unwrap() = Some(r.clone());
                 r
             }
             Err(_) => {
                 *self.inner.regions_failed_at.lock().unwrap() = Some(Instant::now());
-                Arc::new(Regions::default())
+                Arc::new(Regions::named(&name))
             }
+        }
+    }
+
+    /// 设置里的自建中继显示名变了：作废区域表，下次刷新按新名字重新生成
+    pub fn set_relay_name(&self, name: &str) {
+        let mut current = self.inner.relay_name.lock().unwrap();
+        if *current != name {
+            *current = name.to_string();
+            *self.inner.regions.lock().unwrap() = None;
         }
     }
 
@@ -273,7 +286,7 @@ impl Monitor {
 
     /// 用 netmap 补充信息：给走中继的设备补上可能的原因，按局域网地址补 SSH 别名，生成子网路由器的健康状态。
     /// 既没有设备走中继、也没有子网路由器、也没有缺 SSH 别名的设备时不读取 netmap
-    async fn enrich(&self, overview: &mut Overview) {
+    async fn enrich(&self, overview: &mut Overview, regions: &Regions) {
         let has_relay = overview
             .peers
             .iter()
@@ -313,6 +326,7 @@ impl Monitor {
                     r.routes.clone(),
                     device.and_then(|d| d.last_seen_ms),
                     device.and_then(|d| hostinfo(&d.key)),
+                    regions,
                 )
             })
             .collect();
@@ -421,7 +435,7 @@ impl Monitor {
         let snapshot = match status {
             Ok(status) => {
                 let mut overview = self.overview(&status, &regions, prefs);
-                self.enrich(&mut overview).await;
+                self.enrich(&mut overview, &regions).await;
                 let settings = app.state::<SettingsStore>().get();
                 overview.location = locate(&settings);
                 let switching = self.auto_mode(app, &overview, &settings);

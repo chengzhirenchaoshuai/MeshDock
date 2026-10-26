@@ -1,13 +1,19 @@
 //! 连接方式判断（实施计划第 3 节）与 ping 结果解析，全部是纯函数
 use crate::model::{DerpMap, NetInfo, PeerStatus, Status, non_empty};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
-/// 自建中继的区域代码，界面上显示为“广州”
-const SELF_HOSTED_REGION: &str = "headscale";
-const SELF_HOSTED_NAME: &str = "广州";
+/// 自建中继的区域编号下限：Tailscale 把 900～999 留给自建 DERP，Headscale 内置中继默认用 999
+const SELF_HOSTED_MIN_ID: i64 = 900;
+/// Headscale 内置中继的区域代码和编号；derp-map 还没读到时据此认出自建中继
+const HEADSCALE_REGION_CODE: &str = "headscale";
+const HEADSCALE_REGION_ID: &str = "999";
+/// Headscale 内置中继在 derp-map 里的默认名称，不适合直接显示
+const HEADSCALE_REGION_NAME: &str = "Headscale Embedded DERP";
+/// 设置里没起名、derp-map 里也没有合适名称时，自建中继的显示名
+pub const DEFAULT_SELF_HOSTED_NAME: &str = "自建";
 
 /// 变为活跃后多久内仍视为“正在打洞”
 pub const PUNCH_WINDOW: Duration = Duration::from_secs(15);
@@ -51,20 +57,66 @@ impl Conn {
     }
 }
 
-/// 中继区域代码 → 显示名称
-#[derive(Default, Debug)]
+/// 中继区域代码 → 显示名称，并记下哪些区域是自建中继
+#[derive(Debug)]
 pub struct Regions {
     by_code: HashMap<String, String>,
     by_id: HashMap<String, String>,
+    /// 自建中继的区域代码和编号（编号按数字升序）
+    self_codes: HashSet<String>,
+    self_ids: Vec<String>,
+    /// 设置里的自建中继显示名，空时为“自建”
+    self_name: String,
+    /// 是否读到了 derp-map；没读到时按 Headscale 的默认代码和编号认自建中继
+    loaded: bool,
+}
+
+impl Default for Regions {
+    fn default() -> Self {
+        Self::named("")
+    }
+}
+
+/// 设置里的显示名，空时用默认名
+fn self_display_name(name: &str) -> String {
+    match name.trim() {
+        "" => DEFAULT_SELF_HOSTED_NAME.into(),
+        n => n.into(),
+    }
 }
 
 impl Regions {
-    pub fn from_derp_map(map: &DerpMap) -> Self {
-        let mut regions = Self::default();
+    /// 还没读到 derp-map 时用：只知道自建中继的显示名
+    pub fn named(self_name: &str) -> Self {
+        Self {
+            by_code: HashMap::new(),
+            by_id: HashMap::new(),
+            self_codes: HashSet::new(),
+            self_ids: Vec::new(),
+            self_name: self_display_name(self_name),
+            loaded: false,
+        }
+    }
+
+    /// self_name：设置里的自建中继显示名，空时用 derp-map 里的名称（Headscale 内置中继的默认名称除外），再没有就叫“自建”
+    pub fn from_derp_map(map: &DerpMap, self_name: &str) -> Self {
+        let mut regions = Self::named(self_name);
+        regions.loaded = true;
+        let mut self_ids: Vec<(i64, String)> = Vec::new();
         for (key, r) in map.regions.iter().flatten() {
             let code = r.region_code.as_deref();
-            let name = if code == Some(SELF_HOSTED_REGION) {
-                SELF_HOSTED_NAME.into()
+            let id = r.region_id.or_else(|| key.parse().ok());
+            let self_hosted = id.is_some_and(|id| id >= SELF_HOSTED_MIN_ID);
+            let name = if self_hosted {
+                let own = r
+                    .region_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty() && *n != HEADSCALE_REGION_NAME);
+                match (self_name.trim(), own) {
+                    ("", Some(own)) => own.to_string(),
+                    _ => regions.self_name.clone(),
+                }
             } else if let Some(zh) = code.and_then(zh_region_name) {
                 zh.into()
             } else {
@@ -73,28 +125,76 @@ impl Regions {
             };
             if let Some(code) = &r.region_code {
                 regions.by_code.insert(code.clone(), name.clone());
+                if self_hosted {
+                    regions.self_codes.insert(code.clone());
+                }
+            }
+            if self_hosted {
+                self_ids.push((id.unwrap_or_default(), key.clone()));
             }
             regions.by_id.insert(key.clone(), name);
         }
+        self_ids.sort();
+        regions.self_ids = self_ids.into_iter().map(|(_, key)| key).collect();
         regions
     }
 
-    /// 按区域代码取名称：自建中继显示“广州”，其余用 derp-map 中的名称，查不到时原样显示
+    /// 按区域代码取名称：查不到时原样显示（derp-map 还没读到时，Headscale 内置中继显示自建中继的名称）
     pub fn name(&self, code: &str) -> String {
         match self.by_code.get(code) {
             Some(name) => name.clone(),
-            // derp-map 还没读到时，自建中继也要显示“广州”
-            None if code == SELF_HOSTED_REGION => SELF_HOSTED_NAME.into(),
+            None if self.is_self_hosted_code(code) => self.self_name.clone(),
             None => code.into(),
         }
     }
 
     /// 按区域编号取名称（netcheck 的延迟表用编号）
     pub fn name_by_id(&self, id: &str) -> String {
-        self.by_id
-            .get(id)
-            .cloned()
-            .unwrap_or_else(|| format!("区域 {id}"))
+        match self.by_id.get(id) {
+            Some(name) => name.clone(),
+            None if self.is_self_hosted_id(id) => self.self_name.clone(),
+            None => format!("区域 {id}"),
+        }
+    }
+
+    /// 自建中继的显示名（多个自建中继时取编号最小的那个）
+    pub fn self_hosted_name(&self) -> String {
+        self.self_ids
+            .first()
+            .map(|id| self.name_by_id(id))
+            .unwrap_or_else(|| self.self_name.clone())
+    }
+
+    /// 区域代码是不是自建中继
+    pub fn is_self_hosted_code(&self, code: &str) -> bool {
+        if self.loaded {
+            self.self_codes.contains(code)
+        } else {
+            code == HEADSCALE_REGION_CODE
+        }
+    }
+
+    /// 区域编号是不是自建中继
+    pub fn is_self_hosted_id(&self, id: &str) -> bool {
+        if self.loaded {
+            self.self_ids.iter().any(|s| s == id)
+        } else {
+            id.parse::<i64>().is_ok_and(|n| n >= SELF_HOSTED_MIN_ID)
+        }
+    }
+
+    /// 自建中继的区域编号；derp-map 还没读到时按 Headscale 的默认编号猜
+    pub fn self_hosted_ids(&self) -> Vec<String> {
+        if self.loaded {
+            self.self_ids.clone()
+        } else {
+            vec![HEADSCALE_REGION_ID.into()]
+        }
+    }
+
+    /// 组网里有没有自建中继；derp-map 还没读到时无法判断，视为有
+    pub fn has_self_hosted(&self) -> bool {
+        !self.loaded || !self.self_ids.is_empty()
     }
 }
 
@@ -134,9 +234,9 @@ fn zh_region_name(code: &str) -> Option<&'static str> {
 }
 
 /// 中继的提示：自建中继受服务器带宽限制
-fn relay_hint(code: &str) -> Option<String> {
-    if code == SELF_HOSTED_REGION {
-        Some("速度受广州服务器 4 Mbps 带宽限制，约 500 KB/s".into())
+fn relay_hint(code: &str, regions: &Regions) -> Option<String> {
+    if regions.is_self_hosted_code(code) {
+        Some("经自建中继，速度受中继服务器的带宽限制".into())
     } else {
         Some("经官方中继，速度和延迟可能较差".into())
     }
@@ -146,7 +246,7 @@ fn relay_conn(code: &str, regions: &Regions) -> Conn {
     Conn::new(
         ConnKind::Relay,
         format!("中继（经 {}）", regions.name(code)),
-        relay_hint(code),
+        relay_hint(code, regions),
     )
 }
 
@@ -239,8 +339,16 @@ pub fn classify(
             );
         }
         // 7. 在走中继
-        let code = non_empty(&p.relay).unwrap_or(SELF_HOSTED_REGION);
-        return relay_conn(code, regions);
+        return match non_empty(&p.relay) {
+            Some(code) => relay_conn(code, regions),
+            // 没写明经哪个中继：组网有自建中继时多半是它
+            None if regions.has_self_hosted() => Conn::new(
+                ConnKind::Relay,
+                format!("中继（经 {}）", regions.self_hosted_name()),
+                Some("经自建中继，速度受中继服务器的带宽限制".into()),
+            ),
+            None => Conn::new(ConnKind::Relay, "中继", Some("经中继转发，速度和延迟可能较差".into())),
+        };
     }
     // 8. 在线但没有通信
     Conn::new(
@@ -380,7 +488,8 @@ mod tests {
 
     fn regions() -> Regions {
         let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
-        Regions::from_derp_map(&map)
+        // 测试数据是 Headscale 内置中继，设置里起名“广州”
+        Regions::from_derp_map(&map, "广州")
     }
 
     fn peer(online: bool, active: bool, cur_addr: &str) -> PeerStatus {
@@ -494,7 +603,7 @@ mod tests {
         let c = classify(&p, Some(Duration::from_secs(60)), &regions(), &home());
         assert_eq!(c.kind, ConnKind::Relay);
         assert_eq!(c.label, "中继（经 广州）");
-        assert!(c.hint.unwrap().contains("500 KB/s"));
+        assert!(c.hint.unwrap().contains("自建中继"));
     }
 
     #[test]
@@ -521,15 +630,63 @@ mod tests {
     }
 
     #[test]
-    fn 没有_derp_map_时自建中继仍显示广州() {
-        assert_eq!(Regions::default().name("headscale"), "广州");
+    fn 没有_derp_map_时按_headscale_默认值认自建中继() {
+        assert_eq!(Regions::default().name("headscale"), "自建");
+        assert_eq!(Regions::named("广州").name("headscale"), "广州");
         assert_eq!(Regions::default().name("sin"), "sin");
+        assert_eq!(Regions::default().name_by_id("999"), "自建");
+        assert_eq!(Regions::default().self_hosted_ids(), ["999"]);
+        assert!(Regions::default().has_self_hosted());
+    }
+
+    #[test]
+    fn 自建中继的显示名() {
+        let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
+        // 没起名时，Headscale 内置中继的默认名称不直接显示
+        let r = Regions::from_derp_map(&map, "");
+        assert_eq!(r.name("headscale"), "自建");
+        assert_eq!(r.self_hosted_ids(), ["999"]);
+        assert!(r.is_self_hosted_id("999") && !r.is_self_hosted_id("1"));
+        // 自建 DERP 在 derp-map 里写了名称时用它，设置里起了名时以设置为准
+        let custom = DerpMap {
+            regions: Some(HashMap::from([(
+                "901".to_string(),
+                crate::model::DerpRegion {
+                    region_id: Some(901),
+                    region_code: Some("sh".into()),
+                    region_name: Some("上海".into()),
+                },
+            )])),
+        };
+        assert_eq!(Regions::from_derp_map(&custom, "").name("sh"), "上海");
+        assert_eq!(Regions::from_derp_map(&custom, " 公司 ").name("sh"), "公司");
+        assert!(Regions::from_derp_map(&custom, "").is_self_hosted_code("sh"));
+    }
+
+    #[test]
+    fn 只用官方中继时没有自建中继() {
+        let official = DerpMap {
+            regions: Some(HashMap::from([(
+                "1".to_string(),
+                crate::model::DerpRegion {
+                    region_id: Some(1),
+                    region_code: Some("nyc".into()),
+                    region_name: Some("New York City".into()),
+                },
+            )])),
+        };
+        let r = Regions::from_derp_map(&official, "");
+        assert!(!r.has_self_hosted());
+        assert!(!r.is_self_hosted_code("headscale"));
+        let mut p = peer(true, true, "");
+        p.relay = None;
+        assert_eq!(classify(&p, None, &r, &home()).label, "中继");
     }
 
     #[test]
     fn 全部区域都有中文名() {
         let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
-        let r = Regions::from_derp_map(&map);
+        let r = Regions::from_derp_map(&map, "广州");
         for id in map.regions.as_ref().unwrap().keys() {
             let name = r.name_by_id(id);
             assert!(!name.is_ascii(), "区域 {id} 没有中文名：{name}");
@@ -545,7 +702,7 @@ mod tests {
                 },
             )])),
         };
-        assert_eq!(Regions::from_derp_map(&extra).name("xyz"), "Newtown");
+        assert_eq!(Regions::from_derp_map(&extra, "").name("xyz"), "Newtown");
     }
 
     #[test]
@@ -612,7 +769,7 @@ mod tests {
         );
         let hint = c.hint.unwrap();
         assert!(
-            hint.contains("500 KB/s") && hint.contains("没有 IPv6"),
+            hint.contains("自建中继") && hint.contains("没有 IPv6"),
             "{hint}"
         );
     }
