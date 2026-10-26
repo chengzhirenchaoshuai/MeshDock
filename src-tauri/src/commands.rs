@@ -533,7 +533,7 @@ pub fn open_app_release(app: AppHandle, monitor: State<'_, Monitor>) -> Result<(
         .map_err(|e| format!("打开发布页失败：{e}"))
 }
 
-/// 下载并安装新版本（安装版）：成功时程序会退出并由安装程序重新打开，所以只有失败才会返回
+/// 下载并安装新版本：成功时程序会退出并重新打开（安装版由安装程序打开，免安装版替换文件后自己重启），所以只有失败才会返回
 #[tauri::command]
 pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
     crate::app_update::install(&app)

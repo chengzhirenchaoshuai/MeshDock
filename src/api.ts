@@ -98,12 +98,13 @@ export interface Overview {
 export type AppUpdateState =
   | { state: "unknown" }
   | { state: "latest" }
-  | { state: "available"; version: string; url: string; notes: string | null }
+  /** installable：能否一键更新（免安装版要发布里有免安装版的下载项） */
+  | { state: "available"; version: string; url: string; notes: string | null; installable: boolean }
   | { state: "unavailable"; reason: string };
 
 /** 在浏览器中打开新版本的发布页 */
 export const openAppRelease = () => invoke<void>("open_app_release");
-/** 下载并安装新版本（只用于安装版）：成功时程序退出、装好后自动重新打开，所以只有失败才会返回 */
+/** 下载并安装新版本：成功时程序退出并自动重新打开，所以只有失败才会返回 */
 export const installAppUpdate = () => invoke<void>("install_app_update");
 
 /** 新版本的下载进度；total 为 null 表示服务器没给出总大小 */

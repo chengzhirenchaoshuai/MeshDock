@@ -49,6 +49,8 @@ pub(crate) fn sync_autostart(app: &AppHandle, enabled: bool) -> Result<(), Strin
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 免安装版刚更新时要先等旧程序退出，必须在单实例插件之前
+    app_update::after_portable_update();
     tauri::Builder::default()
         // 单实例插件必须最先注册：再次打开程序时只唤出已有窗口
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {

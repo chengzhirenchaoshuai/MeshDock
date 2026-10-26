@@ -63,7 +63,7 @@ async function openRelease() {
   }
 }
 
-// ---------- 自动更新（安装版） ----------
+// ---------- 自动更新 ----------
 const updating = ref(false);
 const progress = ref<UpdateProgress | null>(null);
 const unlistenProgress = onUpdateProgress((p) => (progress.value = p));
@@ -75,7 +75,7 @@ function progressText(p: UpdateProgress | null): string {
   const mb = (n: number) => (n / 1024 / 1024).toFixed(1);
   if (!p.total) return `下载中 ${mb(p.downloaded)} MB`;
   const pct = Math.min(100, Math.round((p.downloaded / p.total) * 100));
-  return pct >= 100 ? "下载完成，正在安装…" : `下载中 ${mb(p.downloaded)} / ${mb(p.total)} MB（${pct}%）`;
+  return pct >= 100 ? "下载完成，正在安装并重新打开…" : `下载中 ${mb(p.downloaded)} / ${mb(p.total)} MB（${pct}%）`;
 }
 
 async function installUpdate() {
@@ -83,7 +83,7 @@ async function installUpdate() {
   progress.value = null;
   openError.value = null;
   try {
-    // 成功时程序会退出并由安装程序重新打开，不会走到下面
+    // 成功时程序会退出并重新打开，不会走到下面
     await installAppUpdate();
   } catch (e) {
     openError.value = String(e);
@@ -350,19 +350,25 @@ function saveGateway(value: string) {
             </template>
             <template v-else>
               <button
-                v-if="info.installed"
+                v-if="appUpdate.installable"
                 type="button"
                 class="ml-2 font-medium text-accent hover:underline"
-                title="下载并安装，装好后自动重新打开 MeshDock"
+                :title="
+                  info.installed
+                    ? '下载并安装，装好后自动重新打开 MeshDock'
+                    : '下载新版本替换当前程序文件（文件名不变），然后自动重新打开'
+                "
                 @click="installUpdate"
               >
                 立即更新
               </button>
               <button type="button" class="ml-2 text-accent hover:underline" @click="openRelease">
-                {{ info.installed ? "查看更新内容" : "打开下载页" }}
+                {{ appUpdate.installable ? "查看更新内容" : "打开下载页" }}
               </button>
             </template>
-            <p v-if="!info.installed" class="mt-1">免安装版不能自动更新，下载新的 portable.exe 替换即可，数据不受影响。</p>
+            <p v-if="!appUpdate.installable" class="mt-1">
+              这个版本没有提供免安装版的自动更新，下载新的 portable.exe 替换即可，数据不受影响。
+            </p>
             <p v-if="appUpdate.notes" class="mt-1 line-clamp-6 whitespace-pre-line text-fg">{{ appUpdate.notes }}</p>
           </template>
           <template v-else-if="appUpdate?.state === 'latest'">已是最新版（每 6 小时检查一次）</template>
