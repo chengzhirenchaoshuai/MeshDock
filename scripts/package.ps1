@@ -8,7 +8,7 @@ $repo = "chengzhirenchaoshuai/MeshDock"
 # 更新签名私钥：默认在 %USERPROFILE%\.tauri\meshdock.key（不进仓库），也可事先设好环境变量
 if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
   $key = Join-Path $env:USERPROFILE ".tauri\meshdock.key"
-  if (-not (Test-Path $key)) { throw "找不到更新签名私钥 $key，见 README 的“发布新版本”" }
+  if (-not (Test-Path $key)) { throw "找不到更新签名私钥 $key，见 README 中的「发布新版本」" }
   $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
 }
 if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) { $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "" }
