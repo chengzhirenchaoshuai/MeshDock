@@ -30,6 +30,6 @@ release/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# 签名私钥，绝不提交（放在 .secrets/ 下，两条规则互为保险）
+# 签名私钥，绝不提交（私钥在仓库外的 ProjectKey 目录，这里防止误放进项目）
 .secrets/
 *.key
