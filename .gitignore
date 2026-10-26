@@ -30,5 +30,6 @@ release/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# 签名私钥，绝不提交
+# 签名私钥，绝不提交（放在 .secrets/ 下，两条规则互为保险）
+.secrets/
 *.key

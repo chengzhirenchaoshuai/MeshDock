@@ -5,10 +5,15 @@ $root = Split-Path $PSScriptRoot -Parent
 $version = (Get-Content "$root\src-tauri\tauri.conf.json" -Raw | ConvertFrom-Json).version
 $repo = "chengzhirenchaoshuai/MeshDock"
 
-# 更新签名私钥：默认在 %USERPROFILE%\.tauri\meshdock.key（不进仓库），也可事先设好环境变量
+# 更新签名私钥：先找项目里的 .secrets\meshdock.key（已被 .gitignore 排除），
+# 再找 %USERPROFILE%\.tauri\meshdock.key，也可事先设好环境变量
 if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-  $key = Join-Path $env:USERPROFILE ".tauri\meshdock.key"
-  if (-not (Test-Path $key)) { throw "找不到更新签名私钥 $key，见 README 中的「发布新版本」" }
+  $keys = @("$root\.secrets\meshdock.key", (Join-Path $env:USERPROFILE ".tauri\meshdock.key"))
+  $key = $keys | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if (-not $key) { throw "找不到更新签名私钥（$($keys -join '、')），见 README 中的「发布新版本」" }
+  # 私钥若被 Git 跟踪就是要泄露了，立即停止
+  git -C $root ls-files --error-unmatch $key 2>$null | Out-Null
+  if ($LASTEXITCODE -eq 0) { throw "私钥 $key 被 Git 跟踪了，请先 git rm --cached 并检查提交历史" }
   $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $key -Raw
 }
 if ($null -eq $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) { $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "" }

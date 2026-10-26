@@ -75,7 +75,7 @@ pnpm package          # 打包：安装版、免安装版和自动更新用的 l
 
 自动更新靠签名防止安装包被替换：打包时用私钥签名，程序里只有公钥（`src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`）。
 
-1. 私钥在 `%USERPROFILE%\.tauri\meshdock.key`（不进仓库，**务必备份**；丢了以后，已安装的旧版本就收不到自动更新了）。也可以用环境变量 `TAURI_SIGNING_PRIVATE_KEY` 指定。
+1. 私钥放在项目里的 `.secrets\meshdock.key`（`.gitignore` 已排除，不会提交；打包脚本发现它被 Git 跟踪会立即停止），找不到时再用 `%USERPROFILE%\.tauri\meshdock.key`，也可以用环境变量 `TAURI_SIGNING_PRIVATE_KEY` 指定。**务必另外备份**，丢了以后已安装的旧版本就收不到自动更新了；把项目文件夹压缩发给别人、或放进网盘同步前，先确认不带 `.secrets`。
 2. 改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，在 `CHANGELOG.md` 写好这一版的更新内容（打包时取这一节作为更新说明）。
 3. 执行 `pnpm package`，然后发布：
 
