@@ -150,6 +150,13 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 移除托盘图标：程序被安装程序直接结束前调用，避免任务栏留下残影
+pub fn remove(app: &AppHandle) {
+    if let Some(tray) = app.remove_tray_by_id(TRAY_ID) {
+        let _ = tray.set_visible(false);
+    }
+}
+
 /// 更新托盘图标和悬停提示
 pub fn set_state(app: &AppHandle, state: TrayState) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {

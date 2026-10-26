@@ -28,7 +28,7 @@
 - **设备搜索、备注和收藏**：按名称、备注、IP、系统搜索设备，可只看在线的；可给设备写备注、收藏常用设备（排在最前，只存本机）。
 - **组网选项与账户**：设置页可开关“允许其他设备连接本机”、“使用组网 DNS”、“无人登录时保持连接”，并在多个已登录账户之间切换。
 - **官方客户端启动方式**：开关官方托盘的开机自启；能 SSH 的 Windows 设备也可远程开关无人值守和托盘自启。
-- **新版本提醒**：官方客户端有新版本时在本机卡片上注明并发通知；MeshDock 自身有新版本时也提醒（需要本机已安装并登录 GitHub 命令行 gh）。
+- **新版本提醒**：官方客户端有新版本时在本机卡片上注明并发通知；MeshDock 自身有新版本时也提醒，安装版在“设置 → 关于”点“立即更新”即可自动下载、校验签名、安装并重新打开；免安装版打开下载页手动替换。
 - **连接 / 断开组网**：断开前二次确认；重新连接时不会改动现有设置。
 - **通知**：设备在直连和中继之间变化、模式开错时发 Windows 通知。
 - **托盘**：圆点颜色表示整体状态（绿=已连接、灰=未连接、红=控制端连不上），右键中文菜单，可直接切换出口节点、打开某台设备的 SSH。
@@ -55,7 +55,22 @@ pnpm install          # 安装前端依赖
 pnpm tauri dev        # 开发模式运行（与正式版共用数据，正式版在运行时只会唤出它的窗口）
 pnpm dev:test         # 开发模式，用测试标识 com.meshdock.test 运行：数据单独存放，可与正式版同时运行
 pnpm test             # 前端单元测试（后端测试在 src-tauri 下执行 cargo test）
-pnpm package          # 打包：安装版和免安装版都输出到项目根目录 release\
+pnpm package          # 打包：安装版、免安装版和自动更新用的 latest.json 输出到项目根目录 release\
 ```
+
+### 发布新版本
+
+自动更新靠签名防止安装包被替换：打包时用私钥签名，程序里只有公钥（`src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`）。
+
+1. 私钥在 `%USERPROFILE%\.tauri\meshdock.key`（不进仓库，**务必备份**；丢了以后，已安装的旧版本就收不到自动更新了）。也可以用环境变量 `TAURI_SIGNING_PRIVATE_KEY` 指定。
+2. 改 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 中的版本号，在 `CHANGELOG.md` 写好这一版的更新内容（打包时取这一节作为更新说明）。
+3. 执行 `pnpm package`，然后发布：
+
+```powershell
+gh release create v<版本> --title "MeshDock <版本>" --notes-file <更新说明文件> `
+  release\MeshDock_<版本>_x64-setup.exe release\MeshDock_<版本>_x64-portable.exe release\<版本>\latest.json
+```
+
+程序读取的是 `releases/latest/download/latest.json`，所以这个发布必须是“最新正式版”（不要勾选预发布），并且要带上 `latest.json`。
 
 技术栈：Tauri 2 + Vue 3 + TypeScript + Tailwind CSS 4。

@@ -33,8 +33,7 @@ pub(super) const UPDATE_RETRY: Duration = Duration::from_secs(10 * 60);
 impl Monitor {
     /// 检查 MeshDock 自身有没有新版本；发现新的版本号时发一次通知。查不到时记下原因（设置页显示），只在原因变化时记日志
     pub(super) async fn check_app_update(&self, app: &AppHandle) {
-        let current = app.package_info().version.to_string();
-        let next = match crate::app_update::check(&current).await {
+        let next = match crate::app_update::check(app).await {
             Ok(Some(u)) => UpdateState::Available(u),
             Ok(None) => UpdateState::Latest,
             Err(reason) => UpdateState::Unavailable { reason },
@@ -52,7 +51,11 @@ impl Monitor {
                         app,
                         vec![(
                             format!("MeshDock 有新版本 {}", u.version),
-                            "打开 MeshDock 的“设置”页，在最下面点“打开下载页”。".into(),
+                            if crate::app_update::installed() {
+                                "打开 MeshDock 的“设置”页，在最下面点“立即更新”。".into()
+                            } else {
+                                "打开 MeshDock 的“设置”页，在最下面点“打开下载页”。".into()
+                            },
                         )],
                     );
                 }

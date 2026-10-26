@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "shortDescription": "自建 Headscale 组网的中文图形客户端",
     "publisher": "MeshDock",
     "category": "Utility",
@@ -46,5 +47,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY5MENBOEFCNUJDOEJDRjUKUldUMXZNaGJxNmdNYVJoam9FY2E2d2NwNE5lM1A1WENBZXFGdlZlSkRlaTZHODJnbElaM3NsNGkK",
+      "endpoints": ["https://github.com/chengzhirenchaoshuai/MeshDock/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
   }
 }

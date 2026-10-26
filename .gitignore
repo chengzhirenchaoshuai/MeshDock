@@ -29,3 +29,6 @@ release/
 # Rust 编译产物与自动生成文件
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# 签名私钥，绝不提交
+*.key

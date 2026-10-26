@@ -1,26 +1,28 @@
-//! MeshDock 自身的新版本检查：仓库是私有的，匿名访问 GitHub 读不到发布信息，程序也不保存任何令牌，
-//! 所以借用本机已登录的 GitHub 命令行 `gh release view` 查询最新正式版。没装或没登录 gh 时视为查不到，不提示
-use serde::{Deserialize, Serialize};
-use std::process::Stdio;
+//! MeshDock 自身的新版本检查与自动更新：用 Tauri 官方更新插件读取公开仓库最新发布里的 latest.json。
+//! 安装包打包时用私钥签名，程序里只放公钥（tauri.conf.json），签名校验通过才会安装。
+//! 安装版可在设置页一键下载安装；免安装版没有安装程序可替换，只提示新版本并打开下载页
+use serde::Serialize;
 use std::time::Duration;
-use tokio::process::Command;
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_updater::{Updater, UpdaterExt};
 
 /// 发布 MeshDock 的仓库
 const REPO: &str = "chengzhirenchaoshuai/MeshDock";
-/// gh 查询的超时（含联网）
-const TIMEOUT: Duration = Duration::from_secs(20);
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// 检查和下载的超时（含联网）。安装包约 5 MB，按慢速网络留足时间
+const TIMEOUT: Duration = Duration::from_secs(120);
+/// 下载进度推给前端的事件
+pub const PROGRESS_EVENT: &str = "app-update-progress";
 
 /// 有新版本时的信息
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppUpdate {
-    /// 新版本号，不带 v，如 0.5.0
+    /// 新版本号，不带 v，如 0.6.0
     pub version: String,
     /// 发布页地址
     pub url: String,
+    /// 更新内容（latest.json 里的 notes），可能没有
+    pub notes: Option<String>,
 }
 
 /// 检查结果，显示在设置页“关于”里
@@ -34,66 +36,82 @@ pub enum UpdateState {
     Latest,
     /// 有新版本
     Available(AppUpdate),
-    /// 查不到（gh 没装、没登录、断网等）
+    /// 查不到（断网、GitHub 访问不了等）
     Unavailable { reason: String },
 }
 
-#[derive(Deserialize)]
+/// 下载进度
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct Release {
-    tag_name: String,
-    url: String,
+struct Progress {
+    downloaded: u64,
+    /// 安装包总大小；服务器没给出时为 None
+    total: Option<u64>,
 }
 
-/// 版本号 → 数字序列：v0.4.10 → [0, 4, 10]；预发布后缀（-beta 等）忽略
-fn numbers(v: &str) -> Vec<u64> {
-    v.trim()
-        .trim_start_matches('v')
-        .split(['-', '+'])
-        .next()
-        .unwrap_or_default()
-        .split('.')
-        .map(|p| p.parse().unwrap_or(0))
-        .collect()
+/// 某个版本的发布页
+fn release_url(version: &str) -> String {
+    format!("https://github.com/{REPO}/releases/tag/v{version}")
 }
 
-/// latest 比 current 新
-fn is_newer(current: &str, latest: &str) -> bool {
-    numbers(latest) > numbers(current)
+/// 是不是安装版：NSIS 安装程序会在程序旁放 uninstall.exe，免安装版没有
+pub fn installed() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.join("uninstall.exe").is_file()))
+        .unwrap_or(false)
 }
 
-/// 解析 `gh release view --json tagName,url` 的输出；比当前版本新时返回新版本信息
-fn parse(json: &str, current: &str) -> Option<AppUpdate> {
-    let r: Release = serde_json::from_str(json).ok()?;
-    is_newer(current, &r.tag_name).then(|| AppUpdate {
-        version: r.tag_name.trim_start_matches('v').to_string(),
-        url: r.url,
-    })
+fn updater(app: &AppHandle) -> Result<Updater, String> {
+    let handle = app.clone();
+    app.updater_builder()
+        .timeout(TIMEOUT)
+        // Windows 上开始安装时程序会被直接结束，先移除托盘图标，免得任务栏留下残影
+        .on_before_exit(move || {
+            crate::applog::info("开始安装新版本，程序退出");
+            crate::tray::remove(&handle);
+        })
+        .build()
+        .map_err(|e| format!("初始化更新检查失败：{e}"))
 }
 
-/// 查询最新正式版。Ok(None) 表示已是最新；gh 没装、没登录、断网等查不到时返回 Err（不提示，稍后重试）
-pub async fn check(current: &str) -> Result<Option<AppUpdate>, String> {
-    let mut cmd = Command::new("gh");
-    cmd.args(["release", "view", "--repo", REPO, "--json", "tagName,url"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
-    let out = match tokio::time::timeout(TIMEOUT, cmd.output()).await {
-        Err(_) => return Err("gh 查询超时".into()),
-        Ok(Err(e)) => return Err(format!("执行 gh 失败：{e}")),
-        Ok(Ok(out)) => out,
+/// 查询最新正式版。Ok(None) 表示已是最新；断网等查不到时返回 Err（不提示，稍后重试）
+pub async fn check(app: &AppHandle) -> Result<Option<AppUpdate>, String> {
+    let update = updater(app)?
+        .check()
+        .await
+        .map_err(|e| format!("检查新版本失败：{e}"))?;
+    Ok(update.map(|u| AppUpdate {
+        url: release_url(&u.version),
+        notes: u.body.clone().filter(|n| !n.trim().is_empty()),
+        version: u.version,
+    }))
+}
+
+/// 下载并安装新版本（只用于安装版）：下载时推送进度，校验签名后运行安装程序，程序随之退出，装好后自动重新打开
+pub async fn install(app: &AppHandle) -> Result<(), String> {
+    if !installed() {
+        return Err("免安装版不能自动更新，请打开下载页下载新版本".into());
+    }
+    let Some(update) = updater(app)?
+        .check()
+        .await
+        .map_err(|e| format!("检查新版本失败：{e}"))?
+    else {
+        return Err("已是最新版".into());
     };
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
-    }
-    let text = String::from_utf8_lossy(&out.stdout);
-    if serde_json::from_str::<Release>(&text).is_err() {
-        return Err(format!("gh 的输出无法识别：{}", text.trim()));
-    }
-    Ok(parse(&text, current))
+    crate::applog::info(format!("开始下载新版本 {}", update.version));
+    let mut downloaded = 0u64;
+    update
+        .download_and_install(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = app.emit(PROGRESS_EVENT, Progress { downloaded, total });
+            },
+            || crate::applog::info("新版本下载完成，签名校验通过"),
+        )
+        .await
+        .map_err(|e| format!("更新失败：{e}"))
 }
 
 #[cfg(test)]
@@ -101,36 +119,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 版本比较() {
-        assert!(is_newer("0.4.0", "v0.5.0"));
-        assert!(is_newer("0.4.0", "v0.4.1"));
-        assert!(is_newer("0.4.9", "v0.4.10"), "按数字比较，不按字符串");
-        assert!(!is_newer("0.4.0", "v0.4.0"));
-        assert!(!is_newer("0.5.0", "v0.4.9"));
-        assert!(!is_newer("0.5.0", "v0.5.0-beta"));
-    }
-
-    #[test]
-    fn 解析_gh_输出() {
-        // 2026-10-20 实际执行 gh release view --repo … --json tagName,url 的输出
-        let json = r#"{"tagName":"v0.4.0","url":"https://github.com/chengzhirenchaoshuai/MeshDock/releases/tag/v0.4.0"}"#;
-        assert_eq!(parse(json, "0.4.0"), None);
+    fn 发布页地址() {
         assert_eq!(
-            parse(json, "0.3.0"),
-            Some(AppUpdate {
-                version: "0.4.0".into(),
-                url: "https://github.com/chengzhirenchaoshuai/MeshDock/releases/tag/v0.4.0".into(),
-            })
+            release_url("0.6.0"),
+            "https://github.com/chengzhirenchaoshuai/MeshDock/releases/tag/v0.6.0"
         );
-        assert_eq!(parse("release not found", "0.3.0"), None);
     }
 
-    /// 实际调用本机的 gh，需手动运行：cargo test -- --ignored
     #[test]
-    #[ignore]
-    fn 实机_查询最新版() {
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let r = rt.block_on(check("0.0.1")).unwrap();
-        assert!(r.is_some_and(|u| u.url.starts_with("https://github.com/")));
+    fn 测试程序不是安装版() {
+        // cargo test 的可执行文件旁没有 uninstall.exe
+        assert!(!installed());
     }
 }

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "tauri": "tauri",
     "dev:test": "tauri dev --config src-tauri/tauri.test.conf.json",
-    "package": "tauri build && pwsh -NoProfile -File scripts/package.ps1"
+    "package": "pwsh -NoProfile -File scripts/package.ps1"
   },
   "dependencies": {
     "@lucide/vue": "1.55.0",

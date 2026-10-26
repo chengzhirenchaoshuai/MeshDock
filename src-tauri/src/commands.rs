@@ -448,6 +448,8 @@ pub struct AppInfo {
     settings_file: String,
     /// 程序旁有 data 目录（便携模式）
     portable: bool,
+    /// 安装版（可自动更新）；免安装版只能到下载页下载
+    installed: bool,
     /// 开发版：开机自启不会真正写入
     debug: bool,
 }
@@ -458,6 +460,7 @@ pub fn get_app_info(app: AppHandle, paths: State<'_, AppPaths>) -> AppInfo {
         version: app.package_info().version.to_string(),
         settings_file: paths.settings_file.display().to_string(),
         portable: paths.webview_dir.is_some(),
+        installed: crate::app_update::installed(),
         debug: cfg!(debug_assertions),
     }
 }
@@ -528,6 +531,14 @@ pub fn open_app_release(app: AppHandle, monitor: State<'_, Monitor>) -> Result<(
     app.opener()
         .open_url(u.url, None::<&str>)
         .map_err(|e| format!("打开发布页失败：{e}"))
+}
+
+/// 下载并安装新版本（安装版）：成功时程序会退出并由安装程序重新打开，所以只有失败才会返回
+#[tauri::command]
+pub async fn install_app_update(app: AppHandle) -> Result<(), String> {
+    crate::app_update::install(&app)
+        .await
+        .inspect_err(|e| applog::error(format!("自动更新失败：{e}")))
 }
 
 /// 用 RustDesk 直连设备的组网 IP（对方需在 RustDesk 中允许 IP 直接访问）

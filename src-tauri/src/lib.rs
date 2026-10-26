@@ -63,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let paths = AppPaths::resolve(app.handle())?;
             applog::init(paths.log_file.clone());
@@ -134,6 +135,7 @@ pub fn run() {
             commands::open_ssh,
             commands::open_rustdesk,
             commands::open_app_release,
+            commands::install_app_update,
             commands::device_sysinfo,
             commands::get_client_setup,
             commands::set_tray_autostart,

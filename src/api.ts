@@ -94,15 +94,25 @@ export interface Overview {
   appUpdate: AppUpdateState;
 }
 
-/** MeshDock 自身的新版本检查结果（经本机已登录的 gh 查询私有仓库的发布） */
+/** MeshDock 自身的新版本检查结果（读取 GitHub 发布里的 latest.json） */
 export type AppUpdateState =
   | { state: "unknown" }
   | { state: "latest" }
-  | { state: "available"; version: string; url: string }
+  | { state: "available"; version: string; url: string; notes: string | null }
   | { state: "unavailable"; reason: string };
 
 /** 在浏览器中打开新版本的发布页 */
 export const openAppRelease = () => invoke<void>("open_app_release");
+/** 下载并安装新版本（只用于安装版）：成功时程序退出、装好后自动重新打开，所以只有失败才会返回 */
+export const installAppUpdate = () => invoke<void>("install_app_update");
+
+/** 新版本的下载进度；total 为 null 表示服务器没给出总大小 */
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+export const onUpdateProgress = (cb: (p: UpdateProgress) => void): Promise<UnlistenFn> =>
+  listen<UpdateProgress>("app-update-progress", (e) => cb(e.payload));
 
 export type ErrorKind = "not-installed" | "service-down" | "timeout" | "access-denied" | "failed";
 
@@ -212,6 +222,8 @@ export interface AppInfo {
   settingsFile: string;
   /** 便携模式（程序旁有 data 目录） */
   portable: boolean;
+  /** 安装版（可自动更新）；免安装版只能到下载页下载 */
+  installed: boolean;
   /** 开发版：开机自启不会真正写入 */
   debug: boolean;
 }
