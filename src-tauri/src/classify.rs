@@ -397,8 +397,13 @@ pub fn control_unreachable(status: &Status) -> bool {
 }
 
 /// 解释为什么走中继：对比本机和对方各自上报的网络检查结论。
-/// 直连需要双方都有 IPv6，或 IPv4 能打洞（对称型 NAT 基本打不通），UDP 被阻断则都不行
-pub fn relay_reason(me: Option<&NetInfo>, peer: Option<&NetInfo>) -> Option<String> {
+/// 直连需要双方都有 IPv6，或 IPv4 能打洞（对称型 NAT 基本打不通），UDP 被阻断则都不行。
+/// `local` 是本机网卡情况：本机有 IPv6 公网地址却用不了时，说明可能被代理 TUN 接管，而不是“没有 IPv6”
+pub fn relay_reason(
+    me: Option<&NetInfo>,
+    peer: Option<&NetInfo>,
+    local: &LocalNet,
+) -> Option<String> {
     let mut reasons = Vec::new();
     for (who, info) in [("对方", peer), ("本机", me)] {
         let Some(info) = info else { continue };
@@ -408,8 +413,15 @@ pub fn relay_reason(me: Option<&NetInfo>, peer: Option<&NetInfo>) -> Option<Stri
     }
     for (who, info) in [("对方", peer), ("本机", me)] {
         let Some(info) = info else { continue };
-        if info.working_ipv6 == Some(false) {
-            reasons.push(format!("{who}当前网络没有 IPv6"));
+        if info.working_ipv6 != Some(false) {
+            continue;
+        }
+        match who {
+            "本机" if local.proxy_tun && local.has_global_v6 => {
+                reasons.push("本机的 IPv6 被代理软件的 TUN 接管了用不了".into())
+            }
+            "本机" if local.has_global_v6 => reasons.push("本机有 IPv6 地址但用不了".into()),
+            _ => reasons.push(format!("{who}当前网络没有 IPv6")),
         }
     }
     for (who, info) in [("对方", peer), ("本机", me)] {
@@ -784,6 +796,7 @@ mod tests {
         let reason = relay_reason(
             n.self_net_info().as_ref(),
             peers[laptop.public_key.as_ref().unwrap()].net_info.as_ref(),
+            &home(),
         );
         assert_eq!(
             reason.as_deref(),
@@ -809,8 +822,8 @@ mod tests {
             mapping_varies_by_dest_ip: Some(false),
             ..Default::default()
         };
-        assert_eq!(relay_reason(Some(&ok), Some(&ok)), None);
-        assert_eq!(relay_reason(None, None), None);
+        assert_eq!(relay_reason(Some(&ok), Some(&ok), &home()), None);
+        assert_eq!(relay_reason(None, None, &home()), None);
         // 非中继连接不追加
         let lan = with_relay_reason(direct_conn("192.168.1.2:41641", &home()), Some("x".into()));
         assert_eq!(lan.hint, None);
@@ -823,8 +836,33 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            relay_reason(Some(&me), None).as_deref(),
+            relay_reason(Some(&me), None, &home()).as_deref(),
             Some("可能的原因：本机网络的 UDP 被阻断，打不通直连")
+        );
+    }
+
+    #[test]
+    fn 本机_ipv6_被代理_tun_接管() {
+        // 实测场景：本机有公网 IPv6 和 TUN 网卡但 IPv6 不通，对方是对称型 NAT
+        let me = NetInfo {
+            working_ipv6: Some(false),
+            ..Default::default()
+        };
+        let peer = NetInfo {
+            working_ipv6: Some(true),
+            mapping_varies_by_dest_ip: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            relay_reason(Some(&me), Some(&peer), &home()).as_deref(),
+            Some(
+                "可能的原因：本机的 IPv6 被代理软件的 TUN 接管了用不了、对方 IPv4 是对称型 NAT，打不通直连"
+            )
+        );
+        // 本机网卡没有公网 IPv6 时仍说“没有 IPv6”
+        assert_eq!(
+            relay_reason(Some(&me), None, &LocalNet::default()).as_deref(),
+            Some("可能的原因：本机当前网络没有 IPv6，打不通直连")
         );
     }
 

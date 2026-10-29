@@ -14,7 +14,9 @@ use crate::cli;
 use crate::gateway;
 use crate::launch;
 use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status};
-use crate::notify::{AutoMode, LatencyWatcher, MismatchWatcher, PathClass, PathWatcher, RelayWatcher};
+use crate::notify::{
+    AutoMode, LatencyWatcher, MismatchWatcher, PathClass, PathWatcher, RelayWatcher,
+};
 use crate::router;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
@@ -302,10 +304,11 @@ impl Monitor {
             let infos = infos.as_ref()?;
             infos.peers.get(key.as_ref()?)
         };
+        let local = self.local();
         for d in overview.peers.iter_mut() {
             let peer = hostinfo(&d.key).and_then(|h| h.net_info.as_ref());
             let me = infos.as_ref().and_then(|i| i.me.as_ref());
-            let reason = classify::relay_reason(me, peer);
+            let reason = classify::relay_reason(me, peer, &local);
             d.conn = classify::with_relay_reason(d.conn.clone(), reason);
             // 组网 IP 和名称都对不上时，再看 ssh 配置里有没有写这台设备局域网地址的别名（如手机的 phone）
             if d.ssh_alias.is_none()
@@ -388,7 +391,10 @@ impl Monitor {
             .as_ref()
             .and_then(|k| infos.peers.get(k))
             .and_then(|h| h.net_info.as_ref());
-        classify::with_relay_reason(conn, classify::relay_reason(infos.me.as_ref(), peer))
+        classify::with_relay_reason(
+            conn,
+            classify::relay_reason(infos.me.as_ref(), peer, &self.local()),
+        )
     }
 
     /// 本机组网选项：缓存未过期时直接用，否则读取 debug prefs；读取失败不缓存
