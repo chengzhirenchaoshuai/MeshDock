@@ -52,9 +52,9 @@ impl Monitor {
                         vec![(
                             format!("MeshDock 有新版本 {}", u.version),
                             if u.installable {
-                                "打开 MeshDock 的“设置”页，在最下面点“立即更新”。".into()
+                                "打开 MeshDock 的“设置 → 关于”，点“立即更新”。".into()
                             } else {
-                                "打开 MeshDock 的“设置”页，在最下面点“打开下载页”。".into()
+                                "打开 MeshDock 的“设置 → 关于”，点“打开下载页”。".into()
                             },
                         )],
                     );
