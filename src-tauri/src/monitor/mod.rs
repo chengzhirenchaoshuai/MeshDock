@@ -289,10 +289,11 @@ impl Monitor {
     /// 用 netmap 补充信息：给走中继的设备补上可能的原因，按局域网地址补 SSH 别名，生成子网路由器的健康状态。
     /// 既没有设备走中继、也没有子网路由器、也没有缺 SSH 别名的设备时不读取 netmap
     async fn enrich(&self, overview: &mut Overview, regions: &Regions) {
+        // 正在打洞的设备也读取，好让下一轮判断能不能跳过打洞
         let has_relay = overview
             .peers
             .iter()
-            .any(|d| d.conn.kind == ConnKind::Relay);
+            .any(|d| matches!(d.conn.kind, ConnKind::Relay | ConnKind::Punching));
         let ssh_hosts = self.inner.ssh_hosts.get();
         let missing_alias =
             !ssh_hosts.is_empty() && overview.peers.iter().any(|d| d.ssh_alias.is_none());
@@ -496,6 +497,8 @@ impl Monitor {
         let peers = status.peers();
         self.track_active(&peers);
         let since = self.inner.active_since.lock().unwrap();
+        // 用缓存的网络检查结论（不在这里读取，过期的也能用：这些结论很少变）
+        let infos = self.inner.net_infos.lock().unwrap().clone().map(|(_, i)| i);
         let peers = peers
             .into_iter()
             .map(|p| {
@@ -503,7 +506,21 @@ impl Monitor {
                     p.id.as_ref()
                         .and_then(|id| since.as_ref()?.get(id))
                         .map(Instant::elapsed);
-                device(p, classify::classify(p, active_for, regions, &local))
+                let mut conn = classify::classify(p, active_for, regions, &local);
+                // 双方条件明显打不通时不显示“正在打洞”，直接按中继显示（原因由 enrich 补上）
+                if conn.kind == ConnKind::Punching
+                    && let Some(i) = &infos
+                {
+                    let peer = p
+                        .public_key
+                        .as_ref()
+                        .and_then(|k| i.peers.get(k))
+                        .and_then(|h| h.net_info.as_ref());
+                    if classify::direct_hopeless(i.me.as_ref(), peer) {
+                        conn = classify::classify(p, None, regions, &local);
+                    }
+                }
+                device(p, conn)
             })
             .collect::<Vec<_>>();
         // SSH 别名：按组网 IP、名称或 MagicDNS 名对应 ~/.ssh/config 中的 HostName

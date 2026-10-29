@@ -433,6 +433,17 @@ pub fn relay_reason(
     (!reasons.is_empty()).then(|| format!("可能的原因：{}，打不通直连", reasons.join("、")))
 }
 
+/// 按双方上报的网络检查结论，直连基本不可能：任一方 UDP 被阻断，
+/// 或 IPv6 走不通（任一方 IPv6 不可用）且 IPv4 也难打洞（任一方对称型 NAT）。
+/// 用来跳过“正在打洞”直接显示中继；信息不全时不下结论
+pub fn direct_hopeless(me: Option<&NetInfo>, peer: Option<&NetInfo>) -> bool {
+    let infos = [me, peer];
+    let any = |f: fn(&NetInfo) -> bool| infos.iter().flatten().any(|i| f(i));
+    any(|i| i.working_udp == Some(false))
+        || (any(|i| i.working_ipv6 == Some(false))
+            && any(|i| i.mapping_varies_by_dest_ip == Some(true)))
+}
+
 /// 中继连接补上原因（接在速度提示后面）；不是中继或找不到原因时原样返回
 pub fn with_relay_reason(mut conn: Conn, reason: Option<String>) -> Conn {
     if conn.kind == ConnKind::Relay
@@ -864,6 +875,38 @@ mod tests {
             relay_reason(Some(&me), None, &LocalNet::default()).as_deref(),
             Some("可能的原因：本机当前网络没有 IPv6，打不通直连")
         );
+    }
+
+    #[test]
+    fn 判断直连基本不可能() {
+        let v6_broken = NetInfo {
+            working_ipv6: Some(false),
+            ..Default::default()
+        };
+        let symmetric = NetInfo {
+            working_ipv6: Some(true),
+            mapping_varies_by_dest_ip: Some(true),
+            ..Default::default()
+        };
+        let easy = NetInfo {
+            working_ipv6: Some(true),
+            mapping_varies_by_dest_ip: Some(false),
+            ..Default::default()
+        };
+        let udp_blocked = NetInfo {
+            working_udp: Some(false),
+            ..Default::default()
+        };
+        // 实测场景：本机 IPv6 不通，对方对称型 NAT
+        assert!(direct_hopeless(Some(&v6_broken), Some(&symmetric)));
+        assert!(direct_hopeless(Some(&udp_blocked), None));
+        // 双方 IPv6 都能用，还能走 IPv6
+        assert!(!direct_hopeless(Some(&easy), Some(&symmetric)));
+        // 只缺 IPv6，IPv4 还能打洞
+        assert!(!direct_hopeless(Some(&v6_broken), Some(&easy)));
+        // 信息不全不下结论
+        assert!(!direct_hopeless(None, None));
+        assert!(!direct_hopeless(Some(&v6_broken), None));
     }
 
     #[test]
