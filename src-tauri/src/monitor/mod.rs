@@ -14,7 +14,7 @@ use crate::cli;
 use crate::gateway;
 use crate::launch;
 use crate::model::{Hostinfo, LocalPrefs, NetInfo, PeerStatus, Status};
-use crate::notify::{AutoMode, LatencyWatcher, MismatchWatcher, PathWatcher, RelayWatcher};
+use crate::notify::{AutoMode, LatencyWatcher, MismatchWatcher, PathClass, PathWatcher, RelayWatcher};
 use crate::router;
 use crate::settings::{Settings, SettingsStore};
 use crate::tray::{self, TrayState};
@@ -573,13 +573,24 @@ fn log_error_change(previous: Option<&Snapshot>, current: &Snapshot) {
     }
 }
 
-/// 快照 → 托盘状态
+/// 快照 → 托盘状态；有设备正在走中继（含节点中转）时显示黄点，空闲、打洞中的设备不算
 fn tray_state(s: &Snapshot) -> TrayState {
     match &s.overview {
         None => TrayState::Disconnected,
         Some(o) if o.backend_state.as_deref() != Some("Running") => TrayState::Disconnected,
         Some(o) if o.control_unreachable => TrayState::ControlUnreachable,
-        Some(_) => TrayState::Connected,
+        Some(o) => {
+            let relayed = o
+                .peers
+                .iter()
+                .filter(|d| PathClass::of(d.conn.kind) == Some(PathClass::Relay))
+                .count();
+            if relayed > 0 {
+                TrayState::Relayed(relayed)
+            } else {
+                TrayState::Connected
+            }
+        }
     }
 }
 

@@ -85,6 +85,8 @@ pub enum TrayState {
     Unknown,
     /// 已连接组网
     Connected,
+    /// 已连接，但有设备正在走中继（数字为台数）
+    Relayed(usize),
     /// 组网已断开或服务没运行
     Disconnected,
     /// 本机正常，但连不上控制端（Headscale）
@@ -97,17 +99,19 @@ impl TrayState {
         match self {
             Self::Unknown => None,
             Self::Connected => Some([0x22, 0xc5, 0x5e]),
+            Self::Relayed(_) => Some([0xea, 0xb3, 0x08]),
             Self::Disconnected => Some([0x9c, 0xa3, 0xaf]),
             Self::ControlUnreachable => Some([0xef, 0x44, 0x44]),
         }
     }
 
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Unknown => "正在获取状态…",
-            Self::Connected => "已连接",
-            Self::Disconnected => "未连接",
-            Self::ControlUnreachable => "控制端连不上",
+            Self::Unknown => "正在获取状态…".into(),
+            Self::Connected => "已连接".into(),
+            Self::Relayed(n) => format!("已连接，{n} 台设备走中继"),
+            Self::Disconnected => "未连接".into(),
+            Self::ControlUnreachable => "控制端连不上".into(),
         }
     }
 }
@@ -587,6 +591,7 @@ mod tests {
         for s in [
             TrayState::Unknown,
             TrayState::Connected,
+            TrayState::Relayed(1),
             TrayState::Disconnected,
             TrayState::ControlUnreachable,
         ] {
