@@ -1,5 +1,5 @@
 //! 本机网络体检：把 netcheck 结果翻译成面向普通人的结论
-use crate::classify::Regions;
+use crate::classify::{LocalNet, Regions};
 use crate::model::{Netcheck, non_empty};
 use serde::Serialize;
 
@@ -59,7 +59,8 @@ fn ns_to_ms(ns: u64) -> f64 {
     (ns as f64 / 100_000.0).round() / 10.0
 }
 
-pub fn report(n: &Netcheck, regions: &Regions, at_ms: i64) -> Report {
+/// `local` 是本机网卡情况，用来区分“没有 IPv6”和“有 IPv6 却用不了”
+pub fn report(n: &Netcheck, regions: &Regions, local: &LocalNet, at_ms: i64) -> Report {
     let mut findings = Vec::new();
 
     // UDP：打洞的前提
@@ -78,6 +79,9 @@ pub fn report(n: &Netcheck, regions: &Regions, at_ms: i64) -> Report {
             Level::Good,
             "当前网络有 IPv6，可以和同样有 IPv6 的设备（比如家里）直连",
         )),
+        (Some(false), _) if local.has_global_v6 => {
+            findings.push(finding(Level::Bad, local.broken_v6_text()))
+        }
         (_, Some(true)) => findings.push(finding(
             Level::Warn,
             "系统支持 IPv6，但当前网络没有 IPv6 公网地址，只能靠 IPv4 打洞或中继",
@@ -190,7 +194,7 @@ fn fmt_ms(ms: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{DerpMap, parse_netcheck};
+    use crate::model::{DerpMap, Status, parse_netcheck};
 
     fn regions() -> Regions {
         let map: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
@@ -205,7 +209,7 @@ mod tests {
     fn 验收场景_家里网络体检() {
         // 本机真实输出：有 IPv6、IPv4 不是对称型 NAT、到广州约 18 ms
         let n = parse_netcheck(include_str!("../fixtures/netcheck.txt")).unwrap();
-        let r = report(&n, &regions(), 0);
+        let r = report(&n, &regions(), &LocalNet::default(), 0);
         let t = texts(&r);
         assert!(t.iter().any(|s| s.starts_with("当前网络有 IPv6")));
         assert!(t.iter().any(|s| s.starts_with("IPv4 不是对称型 NAT")));
@@ -227,7 +231,7 @@ mod tests {
             mapping_varies_by_dest_ip: Some(true),
             ..Default::default()
         };
-        let r = report(&n, &regions(), 0);
+        let r = report(&n, &regions(), &LocalNet::default(), 0);
         let t = texts(&r);
         assert!(
             t.iter()
@@ -240,13 +244,44 @@ mod tests {
         assert!(t.contains(&"连不上广州中继，直连失败时设备之间可能不通".to_string()));
     }
 
+    /// 本机网卡取自真实样本（脱敏）：有公网 IPv6，也有代理的 TUN 网卡 198.18.0.1
+    fn tun_local() -> LocalNet {
+        let s: Status = serde_json::from_str(include_str!("../fixtures/status.json")).unwrap();
+        LocalNet::from_status(&s)
+    }
+
+    #[test]
+    fn 有_ipv6_地址却不通时指出代理_tun() {
+        let n = Netcheck {
+            udp: Some(true),
+            ipv6: Some(false),
+            os_has_ipv6: Some(true),
+            ..Default::default()
+        };
+        let r = report(&n, &regions(), &tun_local(), 0);
+        let f = r
+            .findings
+            .iter()
+            .find(|f| f.text.starts_with("本机有 IPv6 公网地址"))
+            .unwrap();
+        assert_eq!(f.level, Level::Bad);
+        assert!(f.text.contains("TUN"), "{}", f.text);
+        // IPv6 实测可用时不提 TUN
+        let ok = Netcheck {
+            ipv6: Some(true),
+            ..n
+        };
+        let t = texts(&report(&ok, &regions(), &tun_local(), 0));
+        assert!(t.iter().all(|s| !s.contains("TUN")), "{t:?}");
+    }
+
     #[test]
     fn udp_被阻断() {
         let n = Netcheck {
             udp: Some(false),
             ..Default::default()
         };
-        let r = report(&n, &regions(), 0);
+        let r = report(&n, &regions(), &LocalNet::default(), 0);
         assert_eq!(r.findings[0].level, Level::Bad);
     }
 

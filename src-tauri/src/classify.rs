@@ -255,23 +255,50 @@ fn relay_conn(code: &str, regions: &Regions) -> Conn {
 #[derive(Default, Debug)]
 pub struct LocalNet {
     v6_prefixes: Vec<[u16; 4]>,
+    /// 本机网卡上有公网 IPv6 地址（2000::/3）
+    pub has_global_v6: bool,
+    /// 本机有代理软件的 TUN 虚拟网卡：Clash / Mihomo / sing-box 的 TUN 默认用 198.18.0.0/15 的地址
+    pub proxy_tun: bool,
 }
 
 impl LocalNet {
-    /// 从 status 中本机的 Addrs（本机对外的各个地址）提取前缀
+    /// 从 status 中本机的 Addrs（本机对外的各个地址）提取前缀，并识别公网 IPv6 和代理 TUN 网卡
     pub fn from_status(status: &Status) -> Self {
-        let mut v6_prefixes: Vec<[u16; 4]> = status
+        let ips: Vec<IpAddr> = status
             .self_node
             .iter()
             .flat_map(|s| s.addrs.iter().flatten())
-            .filter_map(|a| match a.parse::<SocketAddr>().ok()?.ip() {
-                IpAddr::V6(v6) => Some(prefix64(&v6)),
+            .filter_map(|a| Some(a.parse::<SocketAddr>().ok()?.ip()))
+            .collect();
+        let mut v6_prefixes: Vec<[u16; 4]> = ips
+            .iter()
+            .filter_map(|ip| match ip {
+                IpAddr::V6(v6) => Some(prefix64(v6)),
                 IpAddr::V4(_) => None,
             })
             .collect();
         v6_prefixes.sort_unstable();
         v6_prefixes.dedup();
-        Self { v6_prefixes }
+        let has_global_v6 = ips
+            .iter()
+            .any(|ip| matches!(ip, IpAddr::V6(v6) if (v6.segments()[0] & 0xe000) == 0x2000));
+        let proxy_tun = ips.iter().any(|ip| {
+            matches!(ip, IpAddr::V4(v4) if v4.octets()[0] == 198 && (v4.octets()[1] & 0xfe) == 18)
+        });
+        Self {
+            v6_prefixes,
+            has_global_v6,
+            proxy_tun,
+        }
+    }
+
+    /// 本机网卡有公网 IPv6 地址、实测却用不了时的说明：有代理 TUN 网卡时点明是它
+    pub fn broken_v6_text(&self) -> &'static str {
+        if self.proxy_tun {
+            "本机有 IPv6 公网地址，但 IPv6 实测不通：检测到代理软件的 TUN 虚拟网卡（198.18.x.x），IPv6 流量多半被它接管了。请在代理软件里让 IPv6 绕过 TUN（如关闭 TUN 的 IPv6），否则只能靠 IPv4 打洞或中继"
+        } else {
+            "本机有 IPv6 公网地址，但 IPv6 实测不通，可能被防火墙或代理软件拦截了，只能靠 IPv4 打洞或中继"
+        }
     }
 
     /// 链路本地（fe80::/10）、唯一本地（fc00::/7）或与本机同一 /64 前缀，都算局域网

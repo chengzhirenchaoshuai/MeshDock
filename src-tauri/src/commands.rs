@@ -109,7 +109,12 @@ pub fn export_history(
 pub async fn run_netcheck(monitor: State<'_, Monitor>) -> Result<Report, CliError> {
     let regions = monitor.regions().await;
     let n = cli::netcheck().await?;
-    Ok(netcheck::report(&n, &regions, crate::monitor::now_ms()))
+    Ok(netcheck::report(
+        &n,
+        &regions,
+        &monitor.local(),
+        crate::monitor::now_ms(),
+    ))
 }
 
 /// 读取本机设置
@@ -575,7 +580,7 @@ pub async fn build_report(app: AppHandle, monitor: State<'_, Monitor>) -> Result
         .as_ref()
         .ok()
         .and_then(|o| crate::model::parse_netcheck(&o.stdout).ok())
-        .map(|n| netcheck::report(&n, &regions, crate::monitor::now_ms()));
+        .map(|n| netcheck::report(&n, &regions, &monitor.local(), crate::monitor::now_ms()));
     let input = report::Input {
         version: &app.package_info().version.to_string(),
         generated_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
