@@ -87,3 +87,7 @@ gh release create v<版本> --title "MeshDock <版本>" --notes-file <更新说�
 程序读取的是 `releases/latest/download/latest.json`，所以这个发布必须是“最新正式版”（不要勾选预发布），并且要带上 `latest.json`。
 
 技术栈：Tauri 2 + Vue 3 + TypeScript + Tailwind CSS 4。
+
+## 许可证
+
+本项目以 [MIT 协议](LICENSE) 开源。
