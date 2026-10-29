@@ -32,7 +32,7 @@ pub(super) const UPDATE_RETRY: Duration = Duration::from_secs(10 * 60);
 
 impl Monitor {
     /// 检查 MeshDock 自身有没有新版本；发现新的版本号时发一次通知。查不到时记下原因（设置页显示），只在原因变化时记日志
-    pub(super) async fn check_app_update(&self, app: &AppHandle) {
+    pub(crate) async fn check_app_update(&self, app: &AppHandle) {
         let next = match crate::app_update::check(app).await {
             Ok(Some(u)) => UpdateState::Available(u),
             Ok(None) => UpdateState::Latest,

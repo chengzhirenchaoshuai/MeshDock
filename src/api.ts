@@ -106,6 +106,8 @@ export type AppUpdateState =
 export const openAppRelease = () => invoke<void>("open_app_release");
 /** 下载并安装新版本：成功时程序退出并自动重新打开，所以只有失败才会返回 */
 export const installAppUpdate = () => invoke<void>("install_app_update");
+/** 立即检查有没有新版本，返回检查结果 */
+export const checkAppUpdate = () => invoke<AppUpdateState>("check_app_update");
 
 /** 新版本的下载进度；total 为 null 表示服务器没给出总大小 */
 export interface UpdateProgress {

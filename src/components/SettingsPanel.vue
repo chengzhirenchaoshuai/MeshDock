@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, type Component } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import { Bell, Check, Clock, House, Info, Monitor, Moon, Palette, Power, Server, Sun } from "@lucide/vue";
 import {
+  checkAppUpdate,
   getAppInfo,
   installAppUpdate,
   onUpdateProgress,
@@ -76,6 +77,34 @@ function progressText(p: UpdateProgress | null): string {
   if (!p.total) return `下载中 ${mb(p.downloaded)} MB`;
   const pct = Math.min(100, Math.round((p.downloaded / p.total) * 100));
   return pct >= 100 ? "下载完成，正在安装并重新打开…" : `下载中 ${mb(p.downloaded)} / ${mb(p.total)} MB（${pct}%）`;
+}
+
+// 手动检查：结果先显示在这里，等快照带回新状态后改用快照里的
+const checking = ref(false);
+const checkedState = ref<AppUpdateState | null>(null);
+/** 刚手动查过：结果没变时也让人知道确实查了，10 秒后撤掉提示 */
+const justChecked = ref(false);
+let justCheckedTimer: ReturnType<typeof setTimeout> | undefined;
+onUnmounted(() => clearTimeout(justCheckedTimer));
+const update = computed(() => checkedState.value ?? props.appUpdate);
+watch(
+  () => props.appUpdate,
+  () => (checkedState.value = null),
+);
+
+async function checkNow() {
+  checking.value = true;
+  openError.value = null;
+  try {
+    checkedState.value = await checkAppUpdate();
+    justChecked.value = true;
+    clearTimeout(justCheckedTimer);
+    justCheckedTimer = setTimeout(() => (justChecked.value = false), 10_000);
+  } catch (e) {
+    openError.value = String(e);
+  } finally {
+    checking.value = false;
+  }
 }
 
 async function installUpdate() {
@@ -343,14 +372,14 @@ function saveGateway(value: string) {
         <dd class="num text-fg">{{ info.version }}{{ info.debug ? "（开发版）" : "" }}</dd>
         <dt>新版本</dt>
         <dd>
-          <template v-if="appUpdate?.state === 'available'">
-            <span class="font-medium text-accent">有新版 {{ appUpdate.version }}</span>
+          <template v-if="update?.state === 'available'">
+            <span class="font-medium text-accent">有新版 {{ update.version }}</span>
             <template v-if="updating">
               <span class="num ml-2">{{ progressText(progress) }}</span>
             </template>
             <template v-else>
               <button
-                v-if="appUpdate.installable"
+                v-if="update.installable"
                 type="button"
                 class="ml-2 font-medium text-accent hover:underline"
                 :title="
@@ -363,19 +392,30 @@ function saveGateway(value: string) {
                 立即更新
               </button>
               <button type="button" class="ml-2 text-accent hover:underline" @click="openRelease">
-                {{ appUpdate.installable ? "查看更新内容" : "打开下载页" }}
+                {{ update.installable ? "查看更新内容" : "打开下载页" }}
               </button>
             </template>
-            <p v-if="!appUpdate.installable" class="mt-1">
+            <p v-if="!update.installable" class="mt-1">
               这个版本没有提供免安装版的自动更新，下载新的 portable.exe 替换即可，数据不受影响。
             </p>
-            <p v-if="appUpdate.notes" class="mt-1 line-clamp-6 whitespace-pre-line text-fg">{{ appUpdate.notes }}</p>
+            <p v-if="update.notes" class="mt-1 line-clamp-6 whitespace-pre-line text-fg">{{ update.notes }}</p>
           </template>
-          <template v-else-if="appUpdate?.state === 'latest'">已是最新版（每 6 小时检查一次）</template>
-          <span v-else-if="appUpdate?.state === 'unavailable'" :title="appUpdate.reason">
-            暂时无法检查（可能是连不上 GitHub），稍后自动重试
-          </span>
-          <template v-else>还没检查</template>
+          <template v-else>
+            <template v-if="update?.state === 'latest'">已是最新版{{ justChecked ? "（刚刚检查过）" : "" }}</template>
+            <span v-else-if="update?.state === 'unavailable'" :title="update.reason">
+              暂时无法检查（可能是连不上 GitHub），稍后自动重试
+            </span>
+            <template v-else>还没检查</template>
+            <button
+              type="button"
+              class="ml-2 text-accent hover:underline disabled:cursor-default disabled:text-faint disabled:no-underline"
+              :disabled="checking"
+              title="自动检查每 6 小时一次，也可以现在就查"
+              @click="checkNow"
+            >
+              {{ checking ? "检查中…" : "检查更新" }}
+            </button>
+          </template>
         </dd>
         <template v-if="openError"><dt /><dd class="text-error">{{ openError }}</dd></template>
         <dt>运行方式</dt>

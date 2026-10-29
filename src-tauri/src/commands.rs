@@ -538,6 +538,16 @@ pub fn open_app_release(app: AppHandle, monitor: State<'_, Monitor>) -> Result<(
         .map_err(|e| format!("打开发布页失败：{e}"))
 }
 
+/// 立即检查 MeshDock 有没有新版本（设置页的“检查更新”），返回检查结果
+#[tauri::command]
+pub async fn check_app_update(
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<crate::app_update::UpdateState, ()> {
+    monitor.check_app_update(&app).await;
+    Ok(monitor.app_update())
+}
+
 /// 下载并安装新版本：成功时程序会退出并重新打开（安装版由安装程序打开，免安装版替换文件后自己重启），所以只有失败才会返回
 #[tauri::command]
 pub async fn install_app_update(app: AppHandle) -> Result<(), String> {

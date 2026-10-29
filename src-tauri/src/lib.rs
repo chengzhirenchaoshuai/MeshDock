@@ -138,6 +138,7 @@ pub fn run() {
             commands::open_rustdesk,
             commands::open_app_release,
             commands::install_app_update,
+            commands::check_app_update,
             commands::device_sysinfo,
             commands::get_client_setup,
             commands::set_tray_autostart,
