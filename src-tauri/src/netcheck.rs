@@ -44,6 +44,8 @@ pub struct Report {
     pub port_mapping: Vec<String>,
     /// 按延迟从低到高排列
     pub regions: Vec<RegionLatency>,
+    /// 组网配置了自建中继；没配置时不算“连不上”
+    pub self_hosted_expected: bool,
     pub at_ms: i64,
 }
 
@@ -178,6 +180,7 @@ pub fn report(n: &Netcheck, regions: &Regions, local: &LocalNet, at_ms: i64) -> 
         global_v6: non_empty(&n.global_v6).map(str::to_string),
         port_mapping,
         regions: list,
+        self_hosted_expected: regions.has_self_hosted(),
         at_ms,
     }
 }
@@ -283,6 +286,18 @@ mod tests {
         };
         let r = report(&n, &regions(), &LocalNet::default(), 0);
         assert_eq!(r.findings[0].level, Level::Bad);
+    }
+
+    #[test]
+    fn 组网有没有自建中继() {
+        let n = Netcheck::default();
+        let r = report(&n, &regions(), &LocalNet::default(), 0);
+        assert!(r.self_hosted_expected);
+        // 只用官方中继：没有可测的自建中继，也不算连不上
+        let map: DerpMap = serde_json::from_str(r#"{"Regions":{"1":{"RegionID":1,"RegionCode":"nyc"}}}"#).unwrap();
+        let r = report(&n, &Regions::from_derp_map(&map, ""), &LocalNet::default(), 0);
+        assert!(!r.self_hosted_expected);
+        assert!(!texts(&r).iter().any(|s| s.contains("连不上")));
     }
 
     #[test]

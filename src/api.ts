@@ -179,6 +179,8 @@ export interface NetcheckReport {
   portMapping: string[];
   /** 按延迟从低到高 */
   regions: RegionLatency[];
+  /** 组网配置了自建中继（没有测到时算连不上，而不是没用） */
+  selfHostedExpected: boolean;
   atMs: number;
 }
 
