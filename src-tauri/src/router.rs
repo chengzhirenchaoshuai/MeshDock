@@ -1,5 +1,5 @@
 //! 子网路由器的健康状态：出门时访问家里局域网全靠它
-use crate::classify::Regions;
+use crate::classify::{ConnKind, Regions};
 use crate::model::Hostinfo;
 use crate::netcheck::{Finding, Level};
 use serde::Serialize;
@@ -40,10 +40,28 @@ fn severity(level: Level) -> u8 {
     }
 }
 
-/// 根据在线状态和路由器自己上报的网络检查结论，给出人话结论
+/// 路由器没有 IPv6 时的结论：直连还能靠 IPv4 打洞，所以先看实际路径，再看它是不是对称型 NAT
+fn no_ipv6_finding(direct_v4: bool, symmetric: Option<bool>) -> Finding {
+    if direct_v4 {
+        return finding(Level::Info, "当前没有 IPv6，但本机现在经 IPv4 和它直连，不受影响");
+    }
+    match symmetric {
+        Some(true) => finding(
+            Level::Warn,
+            "当前没有 IPv6：在外面经它访问家里时，多半只能走中继（约 500 KB/s）",
+        ),
+        _ => finding(
+            Level::Info,
+            "当前没有 IPv6：在外面经它访问家里时要靠 IPv4 打洞直连，打不通才走中继（约 500 KB/s）",
+        ),
+    }
+}
+
+/// 根据在线状态、本机到它的实际路径和路由器自己上报的网络检查结论，给出人话结论
 pub fn health(
     name: &str,
     online: bool,
+    conn: Option<&ConnKind>,
     routes: Vec<String>,
     last_seen_ms: Option<i64>,
     info: Option<&Hostinfo>,
@@ -52,6 +70,7 @@ pub fn health(
     let routes_text = routes.join("、");
     let mut findings = Vec::new();
     let net = info.and_then(|h| h.net_info.as_ref());
+    let direct_v4 = conn == Some(&ConnKind::Public);
     if !online {
         findings.push(finding(
             Level::Bad,
@@ -77,13 +96,11 @@ pub fn health(
                     Level::Good,
                     "有 IPv6：在外面连着有 IPv6 的网络时，可以和它直连",
                 )),
-                Some(false) => findings.push(finding(
-                    Level::Warn,
-                    "当前没有 IPv6：在外面经它访问家里时，多半只能走中继（约 500 KB/s）",
-                )),
+                Some(false) => findings.push(no_ipv6_finding(direct_v4, n.mapping_varies_by_dest_ip)),
                 None => {}
             }
-            if n.mapping_varies_by_dest_ip == Some(true) {
+            // 已经打通了，就不再说打洞基本不通
+            if n.mapping_varies_by_dest_ip == Some(true) && !direct_v4 {
                 findings.push(finding(
                     Level::Info,
                     "IPv4 是对称型 NAT：IPv4 打洞基本不通，直连主要靠 IPv6",
@@ -137,6 +154,7 @@ mod tests {
         let h = health(
             "phone-router",
             true,
+            None,
             p.primary_routes.clone().unwrap(),
             None,
             infos.get(p.public_key.as_ref().unwrap()),
@@ -156,6 +174,7 @@ mod tests {
             net_info: Some(NetInfo {
                 working_ipv6: Some(false),
                 working_udp: Some(true),
+                mapping_varies_by_dest_ip: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -163,6 +182,7 @@ mod tests {
         let h = health(
             "phone-router",
             false,
+            None,
             vec!["192.168.66.0/24".into()],
             None,
             Some(&info),
@@ -181,9 +201,47 @@ mod tests {
         );
     }
 
+    fn 没有_ipv6_的结论(conn: Option<&ConnKind>, symmetric: Option<bool>) -> RouterHealth {
+        let info = Hostinfo {
+            net_info: Some(NetInfo {
+                working_ipv6: Some(false),
+                working_udp: Some(true),
+                mapping_varies_by_dest_ip: symmetric,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        health("r", true, conn, vec!["10.0.0.0/24".into()], None, Some(&info), &Regions::default())
+    }
+
+    #[test]
+    fn 没有_ipv6_但已经_ipv4_直连时不说走中继() {
+        for symmetric in [Some(false), Some(true), None] {
+            let h = 没有_ipv6_的结论(Some(&ConnKind::Public), symmetric);
+            assert_eq!(h.level, Level::Info);
+            assert!(h.findings.iter().any(|f| f.text.contains("和它直连")));
+            assert!(!h.findings.iter().any(|f| f.text.contains("多半只能走中继")));
+            assert!(!h.findings.iter().any(|f| f.text.contains("打洞基本不通")));
+        }
+    }
+
+    #[test]
+    fn 没有_ipv6_时按_nat_类型判断在外面能否直连() {
+        // 不是对称型 NAT，或不知道：还能打洞，不下“只能走中继”的结论
+        for symmetric in [Some(false), None] {
+            let h = 没有_ipv6_的结论(Some(&ConnKind::Idle), symmetric);
+            assert_eq!(h.level, Level::Info);
+            assert!(h.findings.iter().any(|f| f.text.contains("打不通才走中继")));
+        }
+        // 对称型 NAT：确实多半只能走中继，在家走局域网也不改变在外面的判断
+        let h = 没有_ipv6_的结论(Some(&ConnKind::Lan), Some(true));
+        assert_eq!(h.level, Level::Warn);
+        assert!(h.findings.iter().any(|f| f.text.contains("多半只能走中继")));
+    }
+
     #[test]
     fn 读不到上报信息() {
-        let h = health("r", true, vec!["10.0.0.0/24".into()], None, None, &Regions::default());
+        let h = health("r", true, None, vec!["10.0.0.0/24".into()], None, None, &Regions::default());
         assert!(
             h.findings
                 .iter()

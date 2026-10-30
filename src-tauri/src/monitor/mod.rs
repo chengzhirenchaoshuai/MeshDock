@@ -327,6 +327,7 @@ impl Monitor {
                 router::health(
                     &r.device,
                     device.is_some_and(|d| d.conn.kind != ConnKind::Offline),
+                    device.map(|d| &d.conn.kind),
                     r.routes.clone(),
                     device.and_then(|d| d.last_seen_ms),
                     device.and_then(|d| hostinfo(&d.key)),
