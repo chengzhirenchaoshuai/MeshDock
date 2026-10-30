@@ -7,6 +7,9 @@ import ErrorView from "./ErrorView.vue";
 import ReportDialog from "./ReportDialog.vue";
 import UiButton from "./ui/UiButton.vue";
 import UiCard from "./ui/UiCard.vue";
+import { useSettingsJump } from "../composables/settingsJump";
+
+const openSettings = useSettingsJump();
 
 const report = ref<NetcheckReport | null>(null);
 const error = ref<CliError | null>(null);
@@ -134,7 +137,10 @@ const official = computed(() => report.value?.regions.filter((r) => !r.selfHoste
           <span class="text-sm font-medium">{{ report.portMapping.length ? report.portMapping.join(" / ") : "未开启" }}</span>
         </div>
         <div class="ui-card flex flex-col gap-1 p-4">
-          <span class="text-xs text-muted">自建中继</span>
+          <span class="flex items-center justify-between gap-2 text-xs text-muted">
+            自建中继
+            <button type="button" class="text-accent hover:underline" @click="openSettings('relay')">改显示名</button>
+          </span>
           <span v-for="r in selfHosted" :key="r.id" class="num text-sm font-medium">
             {{ r.name }} {{ formatLatency(r.ms) }}{{ r.preferred ? "（首选）" : "" }}
           </span>

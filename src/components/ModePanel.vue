@@ -6,8 +6,10 @@ import UiButton from "./ui/UiButton.vue";
 import UiCallout from "./ui/UiCallout.vue";
 import UiCard from "./ui/UiCard.vue";
 import UiSwitch from "./ui/UiSwitch.vue";
+import { useSettingsJump } from "../composables/settingsJump";
 
 const props = defineProps<{ overview: Overview; settings: Settings | null; busy: boolean }>();
+const openSettings = useSettingsJump();
 const emit = defineEmits<{
   /** 请求切换：true 出门、false 在家（由 App 弹确认框） */
   request: [on: boolean];
@@ -68,10 +70,11 @@ const options = computed(() => [
       <div
         v-if="locationText"
         class="flex items-start gap-2 rounded-ctl bg-subtle px-3 py-2 text-xs leading-relaxed text-muted"
-        title="按默认网关自动识别，可在“设置”中修改家里网关"
+        title="按默认网关自动识别"
       >
         <MapPin class="mt-0.5 size-3.5 shrink-0 text-accent" />
-        <span class="min-w-0 break-words">{{ locationText }}</span>
+        <span class="min-w-0 flex-1 break-words">{{ locationText }}</span>
+        <button type="button" class="shrink-0 text-accent hover:underline" @click="openSettings('home')">修改家里网关</button>
       </div>
       <!-- 读不到网关时退回手动标记 -->
       <label
@@ -83,9 +86,17 @@ const options = computed(() => [
           我现在在家（{{
             location.gateways.length === 0
               ? "读不到网关，请手动标记"
-              : "还没设置家里路由器地址，可在“设置 → 在家识别”中选当前网关，之后自动识别"
+              : "还没设置家里路由器地址，选好当前网关后可自动识别"
           }}）
         </span>
+        <button
+          v-if="location.gateways.length > 0"
+          type="button"
+          class="shrink-0 text-accent hover:underline"
+          @click.prevent="openSettings('home')"
+        >
+          去设置
+        </button>
         <UiSwitch :model-value="settings?.atHome === true" @update:model-value="emit('setAtHome', $event || null)" />
       </label>
       <!-- 在家却开着出门模式：2026-09-20 踩过的坑 -->

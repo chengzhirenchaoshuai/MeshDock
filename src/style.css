@@ -486,6 +486,19 @@ body {
   animation: md-pane-in 220ms var(--md-ease);
 }
 
+/* 从其他页面跳到设置卡片时闪一下 */
+@keyframes md-jump-flash {
+  0%, 60% {
+    box-shadow: 0 0 0 2px var(--md-accent);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.md-jump-flash {
+  animation: md-jump-flash 1.6s ease-out;
+}
+
 /* 系统关闭了动画效果时，程序里也不播放 */
 @media (prefers-reduced-motion: reduce) {
   *,

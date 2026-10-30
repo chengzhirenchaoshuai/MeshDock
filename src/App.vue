@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import {
   Check,
   Gauge,
@@ -7,6 +7,7 @@ import {
   Network,
   Plug,
   RefreshCw,
+  CircleArrowUp,
   Settings2,
   Stethoscope,
   TriangleAlert,
@@ -43,6 +44,7 @@ import DisconnectConfirm from "./components/DisconnectConfirm.vue";
 import ModeConfirm from "./components/ModeConfirm.vue";
 import NetcheckPanel from "./components/NetcheckPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import { settingsJumpKey, type SettingsTarget } from "./composables/settingsJump";
 import StatusPill from "./components/ui/StatusPill.vue";
 import UiButton from "./components/ui/UiButton.vue";
 
@@ -52,6 +54,14 @@ const tabs = [
   { id: "settings", label: "设置", icon: Settings2 },
 ] as const;
 const tab = ref<(typeof tabs)[number]["id"]>("devices");
+
+const settingsPanel = ref<InstanceType<typeof SettingsPanel> | null>(null);
+/** 其他页面的“去设置”按钮：切到设置页并定位到对应卡片 */
+function openSettings(target: SettingsTarget) {
+  tab.value = "settings";
+  settingsPanel.value?.open(target);
+}
+provide(settingsJumpKey, openSettings);
 
 const snapshot = ref<Snapshot | null>(null);
 const busy = ref(false);
@@ -264,6 +274,16 @@ onUnmounted(() => {
         </span>
 
         <div class="ml-auto flex items-center gap-2">
+          <UiButton
+            v-if="overview?.appUpdate.state === 'available'"
+            variant="ghost"
+            size="sm"
+            :icon="CircleArrowUp"
+            title="到“设置 → 关于”查看并更新"
+            @click="openSettings('about')"
+          >
+            有新版本
+          </UiButton>
           <span v-if="snapshot" class="num mr-1 text-xs text-faint" title="最近一次读取组网状态的时间">
             {{ clock(snapshot.updatedAtMs) }}
           </span>
@@ -345,6 +365,7 @@ onUnmounted(() => {
 
     <main v-show="tab === 'settings'" class="md-pane flex-1 overflow-y-auto px-6 py-5">
       <SettingsPanel
+        ref="settingsPanel"
         :settings="settings"
         :gateways="overview?.location.gateways ?? []"
         :prefs="overview?.prefs ?? null"

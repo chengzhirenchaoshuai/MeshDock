@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useSettingsJump } from "../composables/settingsJump";
 import { computed, nextTick, ref } from "vue";
 import {
   ArrowDown,
@@ -45,6 +46,7 @@ const props = defineProps<{
   /** 本机给这台设备加的备注 */
   remark?: string;
 }>();
+const openSettings = useSettingsJump();
 const emit = defineEmits<{
   copy: [ip: string];
   test: [];
@@ -310,7 +312,10 @@ ${pingLine.raw}` : pingLine.text"
       >
         <LatencyChart :samples="history" :now="now" />
       </div>
-      <p v-else class="text-[11px] text-faint">还没有延迟历史，程序运行时会按设置的间隔自动测速</p>
+      <p v-else class="text-[11px] text-faint">
+        还没有延迟历史，程序运行时会按设置的间隔自动测速
+        <button type="button" class="text-accent hover:underline" @click="openSettings('interval')">调整间隔</button>
+      </p>
     </template>
 
     <footer class="mt-auto flex items-center gap-4 border-t border-line pt-3 text-xs text-muted">

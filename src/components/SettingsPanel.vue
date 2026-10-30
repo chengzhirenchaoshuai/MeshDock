@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch, type Component } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Component } from "vue";
 import {
   Activity,
   Bell,
@@ -35,6 +35,7 @@ import { PALETTES } from "../palette";
 import AccountsCard from "./AccountsCard.vue";
 import NetPrefsCard from "./NetPrefsCard.vue";
 import UiCard from "./ui/UiCard.vue";
+import type { SettingsTarget } from "../composables/settingsJump";
 import UiSegmented from "./ui/UiSegmented.vue";
 import UiSwitch from "./ui/UiSwitch.vue";
 
@@ -66,6 +67,27 @@ const groups: { id: Group; label: string; icon: Component }[] = [
   { id: "about", label: "关于", icon: Info },
 ];
 const group = ref<Group>("general");
+
+/** 各跳转目标所在的分类 */
+const targetGroup: Record<SettingsTarget, Group> = {
+  home: "network",
+  relay: "network",
+  interval: "monitor",
+  about: "about",
+};
+
+/** 从其他页面跳过来：切到对应分类，滚到卡片并闪一下，让人一眼看到 */
+async function open(target: SettingsTarget) {
+  group.value = targetGroup[target];
+  await nextTick();
+  const card = document.getElementById(`settings-${target}`);
+  if (!card) return;
+  card.scrollIntoView({ block: "nearest" });
+  card.classList.remove("md-jump-flash");
+  void card.offsetWidth; // 强制重排，连续跳到同一张卡片时动画才会重播
+  card.classList.add("md-jump-flash");
+}
+defineExpose({ open });
 
 const themes: { value: ThemeMode; label: string; icon: Component }[] = [
   { value: "system", label: "跟随系统", icon: Monitor },
@@ -286,7 +308,7 @@ function saveGateway(value: string) {
         <NetPrefsCard :prefs="prefs" :busy="prefBusy" @toggle="(p, on, ok) => emit('togglePref', p, on, ok)" />
 
         <!-- 位置识别 -->
-        <UiCard title="在家识别" :icon="House">
+        <UiCard id="settings-home" title="在家识别" :icon="House">
           <p class="text-sm">家里路由器地址</p>
           <p class="mt-0.5 text-xs text-muted">
             本机的默认网关等于这个地址时，视为在家。在家时点下面的“当前默认网关”即可填入；留空则不自动识别位置。模式和位置不一致时，设备页会提示；开启下面的“自动切换”后会自动改过来。组网里没有子网路由器时，这一项用不到。
@@ -328,7 +350,7 @@ function saveGateway(value: string) {
         </UiCard>
 
         <!-- 自建中继的显示名 -->
-        <UiCard title="自建中继" :icon="Server">
+        <UiCard id="settings-relay" title="自建中继" :icon="Server">
           <p class="text-sm">显示名称</p>
           <p class="mt-0.5 text-xs text-muted">
             设备走自建中继时显示为“中继（经 这个名称）”，例如填中继服务器所在的城市。留空时用控制端下发的名称，没有就显示“自建”。
@@ -346,7 +368,7 @@ function saveGateway(value: string) {
 
       <section v-show="group === 'monitor'" class="flex flex-col gap-5" role="tabpanel">
         <!-- 检测周期 -->
-        <UiCard title="检测周期" :icon="Clock">
+        <UiCard id="settings-interval" title="检测周期" :icon="Clock">
           <div class="flex flex-col divide-y divide-line">
             <div class="flex items-center gap-4 pb-3">
               <div class="min-w-0 flex-1">
@@ -419,7 +441,7 @@ function saveGateway(value: string) {
 
       <section v-show="group === 'about'" class="flex flex-col gap-5" role="tabpanel">
         <!-- 关于 -->
-        <UiCard v-if="info" title="关于" :icon="Info">
+        <UiCard v-if="info" id="settings-about" title="关于" :icon="Info">
           <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-xs text-muted">
             <dt>版本</dt>
             <dd class="num text-fg">{{ info.version }}{{ info.debug ? "（开发版）" : "" }}</dd>
