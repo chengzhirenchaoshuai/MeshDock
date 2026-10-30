@@ -9,7 +9,8 @@ edition = "2024"
 [lib]
 # 库名加 _lib 后缀，避免在 Windows 上与可执行文件同名冲突（cargo#8519）
 name = "meshdock_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# 只做桌面版，去掉 iOS 才需要的 staticlib，减小编译产物体积
+crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -26,6 +27,13 @@ tauri-plugin-dialog = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
+
+# 开发版：自己的代码只保留行号级调试信息，依赖库不带调试信息，减小 target 体积
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
 
 # 发布版体积优化，参见 https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
