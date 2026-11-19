@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { LoaderCircle, ShieldCheck, SlidersHorizontal } from "@lucide/vue";
-import { getClientSetup, setTrayAutostart, type ClientSetup, type LocalPrefs, type PrefSwitch } from "../api";
+import {
+  getClientSetup,
+  replaceOfficialTray,
+  setTrayAutostart,
+  type ClientSetup,
+  type LocalPrefs,
+  type PrefSwitch,
+} from "../api";
 import UiCard from "./ui/UiCard.vue";
 import UiSwitch from "./ui/UiSwitch.vue";
 
@@ -68,6 +75,25 @@ async function toggleTray(on: boolean) {
   }
 }
 
+// ---------- 用 MeshDock 代替官方托盘（一次完成：无人值守 + 取消托盘自启 + 退出托盘） ----------
+const replacing = ref(false);
+/** 三项都到位才算已代替 */
+const replaced = computed(() => !!tray.value && tray.value.unattended && !tray.value.trayAutostart && !tray.value.trayRunning);
+
+async function toggleReplace(on: boolean) {
+  replacing.value = true;
+  trayError.value = null;
+  try {
+    tray.value = await replaceOfficialTray(on);
+  } catch (e) {
+    trayError.value = String(e);
+    // 可能只完成了一部分，重新读取实际状态
+    await loadTray().catch(() => {});
+  } finally {
+    replacing.value = false;
+  }
+}
+
 /** 没开无人值守却关掉了托盘自启：开机后组网可能要等有人打开官方客户端才连接 */
 const trayWarn = computed(() => tray.value?.trayAutostart === false && props.prefs?.unattended === false);
 </script>
@@ -95,6 +121,19 @@ const trayWarn = computed(() => tray.value?.trayAutostart === false && props.pre
           @update:model-value="emit('toggle', it.pref, it.invert ? !$event : $event, `已${$event ? '开启' : '关闭'}“${it.title}”`)"
         />
       </label>
+      <label class="flex items-center gap-4 py-3" :class="{ 'cursor-pointer': !!tray }">
+        <div class="min-w-0 flex-1">
+          <p class="flex items-center gap-1.5 text-sm">
+            用 MeshDock 代替官方托盘
+            <ShieldCheck class="size-3.5 text-faint" title="需要管理员权限" />
+          </p>
+          <p class="mt-0.5 text-xs text-muted">
+            开启后自动打开上面的“没有用户登录时也保持连接”，取消官方托盘开机自启并退出它，组网不断开。关闭则恢复并重新打开官方托盘。
+          </p>
+        </div>
+        <LoaderCircle v-if="replacing" class="size-4 animate-spin text-muted" />
+        <UiSwitch :model-value="replaced" :disabled="replacing || trayBusy || busy || !tray" @update:model-value="toggleReplace" />
+      </label>
       <label class="flex items-center gap-4 pt-3" :class="{ 'cursor-pointer': tray?.shortcut }">
         <div class="min-w-0 flex-1">
           <p class="flex items-center gap-1.5 text-sm">
@@ -111,7 +150,7 @@ const trayWarn = computed(() => tray.value?.trayAutostart === false && props.pre
         <LoaderCircle v-if="trayBusy || (!tray && !trayError)" class="size-4 animate-spin text-muted" />
         <UiSwitch
           :model-value="tray?.trayAutostart ?? false"
-          :disabled="trayBusy || !tray?.shortcut"
+          :disabled="trayBusy || replacing || !tray?.shortcut"
           @update:model-value="toggleTray"
         />
       </label>

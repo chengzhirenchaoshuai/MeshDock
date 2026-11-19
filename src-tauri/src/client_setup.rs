@@ -32,6 +32,9 @@ pub struct ClientSetup {
     pub tray_autostart: bool,
     /// 执行脚本的账户是管理员（远端时即 ssh 登录的账户）
     pub admin: bool,
+    /// 官方托盘（tailscale-ipn.exe）正在运行；远端时是任意用户会话里有就算
+    #[serde(default)]
+    pub tray_running: bool,
 }
 
 /// 读取并按需修改的脚本，只用 ASCII，避免各种代码页下中文乱码。
@@ -65,7 +68,19 @@ $prefs = ($raw -join "`n") | ConvertFrom-Json
 $a = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).'Tailscale.lnk'
 $shortcut = Test-Path $lnk
 $on = $shortcut -and (($null -eq $a) -or (($a[0] -band 1) -eq 0))
-'OK:' + (@{ unattended = [bool]$prefs.ForceDaemon; shortcut = $shortcut; trayAutostart = $on; admin = $admin } | ConvertTo-Json -Compress)
+$running = [bool](Get-Process tailscale-ipn -ErrorAction SilentlyContinue)
+'OK:' + (@{ unattended = [bool]$prefs.ForceDaemon; shortcut = $shortcut; trayAutostart = $on; admin = $admin; trayRunning = $running } | ConvertTo-Json -Compress)
+"#;
+
+/// 退出当前用户会话里的官方托盘：强制结束进程（托盘没有退出命令），只动自己会话的，不需要管理员。
+/// 输出一行 OK 或 ERR:LEFT（结束后仍在运行）
+const QUIT_TRAY_SCRIPT: &str = r#"
+$sid = (Get-Process -Id $PID).SessionId
+$mine = { Get-Process tailscale-ipn -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $sid } }
+& $mine | Stop-Process -Force -ErrorAction SilentlyContinue
+for ($i = 0; $i -lt 10 -and (& $mine); $i++) { Start-Sleep -Milliseconds 200 }
+if (& $mine) { 'ERR:LEFT'; exit 8 }
+'OK'
 "#;
 
 /// 生成脚本：unattended / tray 为 None 表示不改，只读取
@@ -178,6 +193,33 @@ pub async fn set_remote(
     remote(alias, &encode(&script(unattended, tray))).await
 }
 
+/// 退出本机当前用户的官方托盘。调用方必须先确认无人值守已开启，否则组网会随托盘一起断开
+pub async fn quit_local_tray() -> Result<(), String> {
+    let (_, out) = powershell(&encode(QUIT_TRAY_SCRIPT), LOCAL_TIMEOUT).await?;
+    if out.lines().any(|l| l.trim() == "OK") {
+        Ok(())
+    } else {
+        Err("没能退出官方托盘，可以右键任务栏里的 Tailscale 图标手动退出".into())
+    }
+}
+
+/// 打开本机的官方托盘（不等待它退出）
+pub fn start_local_tray() -> Result<(), String> {
+    let program_files =
+        std::env::var_os("ProgramFiles").unwrap_or_else(|| r"C:\Program Files".into());
+    let exe = std::path::PathBuf::from(program_files).join(r"Tailscale\tailscale-ipn.exe");
+    if !exe.is_file() {
+        return Err(explain("NOTS", "", "本机"));
+    }
+    std::process::Command::new(&exe)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开官方托盘失败：{e}"))
+}
+
 /// 修改本机的托盘自启：经 UAC 提权执行（会弹出系统的确认框），完成后重新读取
 pub async fn set_local_tray(on: bool) -> Result<ClientSetup, String> {
     let inner = encode(&script(None, Some(on)));
@@ -231,9 +273,17 @@ mod tests {
                 unattended: true,
                 shortcut: true,
                 tray_autostart: false,
-                admin: true
+                admin: true,
+                // 旧版脚本没有这个字段时按未运行处理
+                tray_running: false
             }
         );
+    }
+
+    #[test]
+    fn 退出托盘脚本只含_ascii() {
+        assert!(QUIT_TRAY_SCRIPT.is_ascii());
+        assert!(QUIT_TRAY_SCRIPT.contains("SessionId"));
     }
 
     #[test]

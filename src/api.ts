@@ -308,12 +308,16 @@ export interface ClientSetup {
   trayAutostart: boolean;
   /** 执行的账户是管理员（远端时即 ssh 登录的账户） */
   admin: boolean;
+  /** 官方托盘正在运行 */
+  trayRunning: boolean;
 }
 /** alias 为 null 读本机，否则经 ssh 读对方（Windows） */
 export const getClientSetup = (alias: string | null) => invoke<ClientSetup>("get_client_setup", { alias });
 /** 开关官方托盘的开机自启：本机会弹出 UAC 确认框，对方需 ssh 账户是管理员 */
 export const setTrayAutostart = (alias: string | null, on: boolean) =>
   invoke<ClientSetup>("set_tray_autostart", { alias, on });
+/** 本机用 MeshDock 代替官方托盘（开：无人值守 + 取消托盘自启 + 退出托盘；关：恢复托盘自启并打开） */
+export const replaceOfficialTray = (on: boolean) => invoke<ClientSetup>("replace_official_tray", { on });
 /** 经 ssh 开关对方的无人值守 */
 export const setRemoteUnattended = (alias: string, on: boolean) =>
   invoke<ClientSetup>("set_remote_unattended", { alias, on });

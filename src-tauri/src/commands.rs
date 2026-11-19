@@ -508,6 +508,57 @@ pub async fn set_tray_autostart(
     result
 }
 
+/// 本机“用 MeshDock 代替官方托盘”。
+/// 开启：先开无人值守并重新读取确认，再取消官方托盘开机自启（UAC 确认），最后退出官方托盘；
+/// 无人值守没确认开上之前绝不退出托盘，否则组网会跟着断开。
+/// 关闭：恢复官方托盘开机自启（UAC 确认）并打开它；无人值守保持开启，不影响使用
+#[tauri::command]
+pub async fn replace_official_tray(
+    on: bool,
+    app: AppHandle,
+    monitor: State<'_, Monitor>,
+) -> Result<crate::client_setup::ClientSetup, String> {
+    use crate::client_setup as cs;
+    let what = if on { "用 MeshDock 代替官方托盘" } else { "恢复官方托盘" };
+    let result: Result<cs::ClientSetup, String> = async {
+        let mut setup = cs::get(None).await?;
+        if on {
+            if !setup.unattended {
+                cli::set_switch(cli::PrefSwitch::Unattended, true)
+                    .await
+                    .map_err(|e| format!("开启无人值守失败：{}", e.message))?;
+                setup = cs::get(None).await?;
+                if !setup.unattended {
+                    return Err("已执行开启无人值守，但重新读取仍是关闭，没有退出官方托盘".into());
+                }
+                applog::info("本机：无人值守已开启");
+            }
+            if setup.shortcut && setup.tray_autostart {
+                setup = cs::set_local_tray(false).await?;
+            }
+            if setup.tray_running {
+                cs::quit_local_tray().await?;
+            }
+        } else {
+            if setup.shortcut && !setup.tray_autostart {
+                setup = cs::set_local_tray(true).await?;
+            }
+            if !setup.tray_running {
+                cs::start_local_tray()?;
+            }
+        }
+        cs::get(None).await
+    }
+    .await;
+    // 无论成败都刷新一次，让界面上的无人值守等开关跟上
+    monitor.refresh_reread(&app).await;
+    match &result {
+        Ok(s) => applog::info(format!("{what}：完成 {s:?}")),
+        Err(e) => applog::error(format!("{what}失败：{e}")),
+    }
+    result
+}
+
 /// 经 ssh 开关对方的无人值守（本机用组网选项里的开关）
 #[tauri::command]
 pub async fn set_remote_unattended(

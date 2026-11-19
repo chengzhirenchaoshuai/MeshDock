@@ -99,7 +99,9 @@ impl From<Prefs> for LocalPrefs {
             exit_node_allow_lan: p.exit_node_allow_lan_access,
             accept_dns: p.corp_dns,
             shields_up: p.shields_up,
-            unattended: p.force_daemon,
+            // tailscale 在 ForceDaemon 为 false 时不输出这个字段（2026-11-19 实机 1.102.4），
+            // 能读到 prefs 时缺省就是关闭，不能当成读不到，否则界面上的开关会一直禁用
+            unattended: Some(p.force_daemon.unwrap_or(false)),
         }
     }
 }
@@ -477,6 +479,11 @@ mod tests {
                 unattended: Some(true),
             }
         );
+        // 未开无人值守时实机输出里没有 ForceDaemon 字段，应视为关闭而不是读不到
+        let mut v: serde_json::Value = serde_json::from_str(include_str!("../fixtures/prefs.json")).unwrap();
+        v.as_object_mut().unwrap().remove("ForceDaemon");
+        let off = LocalPrefs::from(serde_json::from_value::<Prefs>(v).unwrap());
+        assert_eq!(off.unattended, Some(false));
         let d: DerpMap = serde_json::from_str(include_str!("../fixtures/derpmap.json")).unwrap();
         let regions = d.regions.unwrap();
         assert_eq!(regions.len(), 29);

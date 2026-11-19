@@ -143,6 +143,7 @@ pub fn run() {
             commands::get_client_setup,
             commands::set_tray_autostart,
             commands::set_remote_unattended,
+            commands::replace_official_tray,
         ])
         // 点击关闭按钮：默认只隐藏到托盘（真正退出走托盘菜单）；设置中关闭了该项时直接退出
         .on_window_event(|win, event| {
