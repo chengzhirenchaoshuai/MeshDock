@@ -1,6 +1,6 @@
 [package]
 name = "meshdock"
-version = "0.9.1"
+version = "1.0.0"
 description = "自建 Headscale 组网的中文图形客户端"
 authors = []
 license = "MIT"
