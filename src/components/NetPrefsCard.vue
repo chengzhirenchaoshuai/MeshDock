@@ -4,7 +4,6 @@ import { LoaderCircle, ShieldCheck, SlidersHorizontal } from "@lucide/vue";
 import {
   getClientSetup,
   replaceOfficialTray,
-  setTrayAutostart,
   type ClientSetup,
   type LocalPrefs,
   type PrefSwitch,
@@ -38,20 +37,14 @@ const items = computed(() => {
       title: "使用组网下发的 DNS",
       desc: "可直接用设备名（如 ming-pc）访问。注意别和代理软件的 DNS 冲突。",
     },
-    {
-      pref: "unattended" as const,
-      invert: false,
-      value: p?.unattended,
-      title: "没有用户登录时也保持连接",
-      desc: "开启后可退出官方托盘，未登录、注销时组网也不断开。",
-    },
   ];
 });
 
-// ---------- 官方托盘的开机自启（改的是 Windows 启动项，不是 tailscale 的设置） ----------
+// ---------- 用 MeshDock 代替官方托盘：一次完成无人值守 + 取消托盘自启 + 退出托盘 ----------
+// 无人值守和托盘自启不再单独显示（三者是一回事），远端设备的“官方客户端”面板里仍可单独调
 const tray = ref<ClientSetup | null>(null);
 const trayError = ref<string | null>(null);
-const trayBusy = ref(false);
+const replacing = ref(false);
 
 async function loadTray() {
   try {
@@ -63,20 +56,6 @@ async function loadTray() {
 }
 onMounted(loadTray);
 
-async function toggleTray(on: boolean) {
-  trayBusy.value = true;
-  trayError.value = null;
-  try {
-    tray.value = await setTrayAutostart(null, on);
-  } catch (e) {
-    trayError.value = String(e);
-  } finally {
-    trayBusy.value = false;
-  }
-}
-
-// ---------- 用 MeshDock 代替官方托盘（一次完成：无人值守 + 取消托盘自启 + 退出托盘） ----------
-const replacing = ref(false);
 /** 三项都到位才算已代替 */
 const replaced = computed(() => !!tray.value && tray.value.unattended && !tray.value.trayAutostart && !tray.value.trayRunning);
 
@@ -86,16 +65,17 @@ async function toggleReplace(on: boolean) {
   try {
     tray.value = await replaceOfficialTray(on);
   } catch (e) {
-    trayError.value = String(e);
-    // 可能只完成了一部分，重新读取实际状态
-    await loadTray().catch(() => {});
+    const msg = String(e);
+    // 可能只完成了一部分，重新读取实际状态；读取本身的错误不盖掉这次的原因
+    await loadTray();
+    trayError.value = msg;
   } finally {
     replacing.value = false;
   }
 }
 
-/** 没开无人值守却关掉了托盘自启：开机后组网可能要等有人打开官方客户端才连接 */
-const trayWarn = computed(() => tray.value?.trayAutostart === false && props.prefs?.unattended === false);
+/** 官方托盘不开机自启、又没开无人值守：开机后组网可能不会自动连接 */
+const trayWarn = computed(() => !!tray.value && !tray.value.unattended && !tray.value.trayAutostart);
 </script>
 
 <template>
@@ -121,38 +101,22 @@ const trayWarn = computed(() => tray.value?.trayAutostart === false && props.pre
           @update:model-value="emit('toggle', it.pref, it.invert ? !$event : $event, `已${$event ? '开启' : '关闭'}“${it.title}”`)"
         />
       </label>
-      <label class="flex items-center gap-4 py-3" :class="{ 'cursor-pointer': !!tray }">
+      <label class="flex items-center gap-4 pt-3" :class="{ 'cursor-pointer': !!tray }">
         <div class="min-w-0 flex-1">
           <p class="flex items-center gap-1.5 text-sm">
             用 MeshDock 代替官方托盘
             <ShieldCheck class="size-3.5 text-faint" title="需要管理员权限" />
           </p>
           <p class="mt-0.5 text-xs text-muted">
-            开启后自动打开上面的“没有用户登录时也保持连接”，取消官方托盘开机自启并退出它，组网不断开。关闭则恢复并重新打开官方托盘。
+            开启后退出官方托盘并取消它的开机自启，没有用户登录时组网也保持连接。关闭则恢复官方托盘。修改会弹出管理员确认。
           </p>
-        </div>
-        <LoaderCircle v-if="replacing" class="size-4 animate-spin text-muted" />
-        <UiSwitch :model-value="replaced" :disabled="replacing || trayBusy || busy || !tray" @update:model-value="toggleReplace" />
-      </label>
-      <label class="flex items-center gap-4 pt-3" :class="{ 'cursor-pointer': tray?.shortcut }">
-        <div class="min-w-0 flex-1">
-          <p class="flex items-center gap-1.5 text-sm">
-            开机时启动官方托盘图标
-            <ShieldCheck class="size-3.5 text-faint" title="需要管理员权限" />
-          </p>
-          <p class="mt-0.5 text-xs text-muted">已开启上一项时可关掉，组网照样开机连接。修改会弹出管理员确认。</p>
           <p v-if="trayError" class="mt-1 text-xs break-words text-error">{{ trayError }}</p>
-          <p v-else-if="tray && !tray.shortcut" class="mt-1 text-xs text-faint">没找到官方托盘的启动项，无法开关</p>
           <p v-else-if="trayWarn" class="mt-1 text-xs text-punching">
-            上一项未开启，开机后组网可能不会自动连接，建议先开启。
+            官方托盘不开机自启，开机后组网可能不会自动连接，建议打开这一项。
           </p>
         </div>
-        <LoaderCircle v-if="trayBusy || (!tray && !trayError)" class="size-4 animate-spin text-muted" />
-        <UiSwitch
-          :model-value="tray?.trayAutostart ?? false"
-          :disabled="trayBusy || replacing || !tray?.shortcut"
-          @update:model-value="toggleTray"
-        />
+        <LoaderCircle v-if="replacing || (!tray && !trayError)" class="size-4 animate-spin text-muted" />
+        <UiSwitch :model-value="replaced" :disabled="replacing || busy || !tray" @update:model-value="toggleReplace" />
       </label>
     </div>
   </UiCard>
