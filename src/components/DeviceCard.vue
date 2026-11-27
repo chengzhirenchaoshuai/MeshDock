@@ -127,20 +127,18 @@ const timeLine = computed(() => {
         <Send class="size-4" />松开发给 {{ device.name }}
       </span>
     </div>
-    <!-- 左侧状态色条 -->
+    <!-- 左侧色条：在线用主题渐变，离线为灰色；连接状态看右上角的状态胶囊 -->
     <span
       class="absolute inset-y-0 left-0 w-[3px] transition-colors duration-300"
-      :style="{ background: `var(--md-${tone})` }"
+      :style="{ background: offline ? 'var(--md-offline)' : 'var(--md-grad)' }"
       aria-hidden="true"
     />
     <header class="flex items-start gap-3">
+      <!-- 系统图标：在线时用淡主题色底，离线时置灰 -->
       <div
         class="grid size-10 shrink-0 place-items-center rounded-ctl transition-colors duration-300"
-        :style="
-          offline
-            ? { color: 'var(--md-faint)', background: 'var(--md-subtle)' }
-            : { color: `var(--md-${tone})`, background: `var(--md-${tone}-soft)` }
-        "
+        :class="{ 'ui-chip-soft': !offline }"
+        :style="offline ? { color: 'var(--md-faint)', background: 'var(--md-subtle)' } : undefined"
       >
         <OsIcon :os="device.os" />
       </div>

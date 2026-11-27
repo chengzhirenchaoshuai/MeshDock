@@ -16,9 +16,9 @@ export const PALETTES = [
   },
   {
     id: "neon",
-    label: "霓虹",
-    desc: "品红到紫，鲜艳",
-    swatch: { from: "#c026d3", to: "#7c3aed", bg: "#0f0a1a", card: "#181127", lightTop: "#f6e6fa", lightBg: "#faf9fb", lightAccent: "#a21caf" },
+    label: "樱花",
+    desc: "淡樱粉，柔和",
+    swatch: { from: "#fbc4dc", to: "#f48fbd", bg: "#140b10", card: "#1e1218", lightTop: "#fde6ef", lightBg: "#fdf7f9", lightAccent: "#f7a8cb" },
   },
   {
     id: "jade",

@@ -46,6 +46,7 @@ import NetcheckPanel from "./components/NetcheckPanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import { settingsJumpKey, type SettingsTarget } from "./composables/settingsJump";
 import StatusPill from "./components/ui/StatusPill.vue";
+import TitleBar from "./components/TitleBar.vue";
 import UiButton from "./components/ui/UiButton.vue";
 
 const tabs = [
@@ -258,11 +259,15 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <!-- 顶栏：左边品牌和状态，右边操作；下面一行是标签页 -->
+    <!-- 整个顶栏都可拖动窗口（deep：按钮、标签页等可点击元素除外），双击最大化 -->
     <header
       class="z-10 border-b backdrop-blur-xl"
       style="background: var(--md-header); border-color: var(--md-header-line)"
+      data-tauri-drag-region="deep"
     >
-      <div class="flex items-center gap-3 px-6 pt-3 pb-2">
+      <!-- 系统标题栏已去掉，右上角自绘窗口按钮 -->
+      <TitleBar />
+      <div class="flex items-center gap-3 px-6 pb-2">
         <span
           class="grid size-8 shrink-0 place-items-center rounded-ctl text-[var(--md-grad-fg)]"
           style="background: var(--md-grad); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--md-grad-shadow) 80%, transparent)"
