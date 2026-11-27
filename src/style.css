@@ -32,7 +32,7 @@
 }
 
 /* ---------- 浅色（默认配色方案“极光”） ---------- */
-/* 中性色取自 Radix Colors 的 Slate 灰阶（slate2/3/6/9/11/12），接近纯灰，只带一点冷调 */
+/* 中性色取自 Radix Colors 的 Slate 灰阶（slate2/3/5/9/11/12），接近纯灰，只带一点冷调 */
 :root {
   --md-bg: #f9f9fb;
   --md-surface: #ffffff;
@@ -159,31 +159,18 @@
  * 只换品牌色、背景色调和光晕；连接状态色（绿、橙、黄、红、灰）在所有方案中保持不变。
  * 品牌色尽量避开绿、橙、黄、红，免得和状态色混淆；“翡翠”应要求用绿色，偏向青绿，与直连的纯绿拉开。
  * 写法：先写浅色，再在深色媒体查询里写深色；选择器比 :root 更具体，会覆盖上面的“极光”。
+ * 浅色：背景、浅灰、边框取 Radix Colors 里和品牌色相配的灰阶（2/3/5 级），顶部极光取品牌渐变两端的颜色；
+ * 文字灰度、阴影、主按钮等沿用“极光”的写法。深色块里会把浅色专用的变量复原，见深色部分开头。
  * 可选值与后端 settings.rs 的 PALETTE_CHOICES、前端 palette.ts 一致。
  */
 
-/* 浅色的纯色主按钮、顶部极光、透明顶栏暂时只给“极光”，其他方案保持原样（待逐个调整） */
-:root[data-palette="ocean"],
-:root[data-palette="neon"],
-:root[data-palette="jade"],
-:root[data-palette="graphite"] {
-  --md-primary-bg: var(--md-grad);
-  --md-primary-bg-hover: var(--md-grad-hover);
-  --md-primary-fg: var(--md-grad-fg);
-  --md-primary-shadow: 0 4px 14px -6px color-mix(in srgb, var(--md-grad-shadow) 70%, transparent);
-  --md-primary-shadow-hover: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
-  --md-hero-1: transparent;
-  --md-hero-2: transparent;
-  --md-hero-top: transparent;
-  --md-header-line: var(--md-line);
-}
-
 /* 深海：蓝到青 */
 :root[data-palette="ocean"] {
-  --md-bg: #f1f5fb;
+  /* Slate 灰阶 */
+  --md-bg: #f9f9fb;
   --md-surface: #ffffff;
-  --md-subtle: #ebf1f8;
-  --md-line: #dde5f0;
+  --md-subtle: #f0f0f3;
+  --md-line: #e0e1e6;
   --md-accent: #1d5fd0;
   --md-accent-hover: #1a4fb0;
   --md-accent-fg: #ffffff;
@@ -191,17 +178,18 @@
   --md-grad-hover: linear-gradient(135deg, #1d4ed8 0%, #155e75 100%);
   --md-grad-fg: #ffffff;
   --md-grad-shadow: #2563eb;
-  --md-glow-1: rgb(37 99 235 / 0.1);
-  --md-glow-2: rgb(14 165 233 / 0.08);
-  --md-header: rgb(255 255 255 / 0.72);
+  --md-hero-1: rgb(37 99 235 / 0.24);
+  --md-hero-2: rgb(14 165 233 / 0.22);
+  --md-hero-top: #e4eefd;
 }
 
 /* 霓虹：品红到紫 */
 :root[data-palette="neon"] {
-  --md-bg: #faf5fc;
+  /* Mauve 灰阶（带紫调） */
+  --md-bg: #faf9fb;
   --md-surface: #ffffff;
-  --md-subtle: #f4ecf8;
-  --md-line: #eadff0;
+  --md-subtle: #f2eff3;
+  --md-line: #e3dfe6;
   --md-accent: #a21caf;
   --md-accent-hover: #86198f;
   --md-accent-fg: #ffffff;
@@ -209,17 +197,18 @@
   --md-grad-hover: linear-gradient(135deg, #a21caf 0%, #6d28d9 100%);
   --md-grad-fg: #ffffff;
   --md-grad-shadow: #c026d3;
-  --md-glow-1: rgb(192 38 211 / 0.09);
-  --md-glow-2: rgb(124 58 237 / 0.08);
-  --md-header: rgb(255 255 255 / 0.72);
+  --md-hero-1: rgb(192 38 211 / 0.22);
+  --md-hero-2: rgb(124 58 237 / 0.22);
+  --md-hero-top: #f6e6fa;
 }
 
 /* 翡翠：绿到青绿 */
 :root[data-palette="jade"] {
-  --md-bg: #f1f8f5;
+  /* Sage 灰阶（带绿调） */
+  --md-bg: #f7f9f8;
   --md-surface: #ffffff;
-  --md-subtle: #e9f4ef;
-  --md-line: #d9ebe3;
+  --md-subtle: #eef1f0;
+  --md-line: #dfe2e0;
   --md-accent: #047857;
   --md-accent-hover: #065f46;
   --md-accent-fg: #ffffff;
@@ -227,17 +216,18 @@
   --md-grad-hover: linear-gradient(135deg, #065f46 0%, #115e59 100%);
   --md-grad-fg: #ffffff;
   --md-grad-shadow: #047857;
-  --md-glow-1: rgb(4 120 87 / 0.09);
-  --md-glow-2: rgb(15 118 110 / 0.08);
-  --md-header: rgb(255 255 255 / 0.72);
+  --md-hero-1: rgb(16 185 129 / 0.22);
+  --md-hero-2: rgb(20 184 166 / 0.2);
+  --md-hero-top: #e2f4ec;
 }
 
 /* 石墨：中性灰，不带彩色 */
 :root[data-palette="graphite"] {
-  --md-bg: #f4f4f5;
+  /* Gray 灰阶（纯灰） */
+  --md-bg: #f9f9f9;
   --md-surface: #ffffff;
-  --md-subtle: #efeff1;
-  --md-line: #e4e4e7;
+  --md-subtle: #f0f0f0;
+  --md-line: #e0e0e0;
   --md-accent: #3f3f46;
   --md-accent-hover: #27272a;
   --md-accent-fg: #ffffff;
@@ -245,12 +235,21 @@
   --md-grad-hover: linear-gradient(135deg, #3f3f46 0%, #18181b 100%);
   --md-grad-fg: #ffffff;
   --md-grad-shadow: #27272a;
-  --md-glow-1: rgb(113 113 122 / 0.08);
-  --md-glow-2: rgb(161 161 170 / 0.06);
-  --md-header: rgb(255 255 255 / 0.72);
+  /* 不带彩色，顶部只是一层淡灰 */
+  --md-hero-1: rgb(113 113 122 / 0.16);
+  --md-hero-2: rgb(161 161 170 / 0.16);
+  --md-hero-top: #ececee;
 }
 
 @media (prefers-color-scheme: dark) {
+  /* 浅色方案块的选择器比深色的 :root 更具体，这里把浅色专用的变量复原成深色的值；
+     各方案的背景、光晕、顶栏底色在下面各自的块里再写 */
+  :root[data-palette] {
+    --md-hero-1: transparent;
+    --md-hero-2: transparent;
+    --md-hero-top: transparent;
+  }
+
   :root[data-palette="ocean"] {
     --md-bg: #07111d;
     --md-surface: #0e1a2a;
@@ -537,6 +536,45 @@ body {
     border: 1px solid var(--md-line);
     border-radius: var(--radius-ctl);
     background: var(--md-subtle);
+  }
+}
+
+/* ---------- 设置页配色小样 ----------
+ * 颜色由模板按方案传入（--sw-*），这里按当前主题挑浅色或深色那套 */
+.md-swatch {
+  background: var(--sw-light-bg);
+  box-shadow: inset 0 0 0 1px rgb(16 24 40 / 0.06);
+}
+.md-swatch-bar {
+  background: rgb(16 24 40 / 0.14);
+}
+.md-swatch-card {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.08);
+}
+.md-swatch-dot {
+  background: #15803d;
+}
+.md-swatch-btn {
+  background: var(--sw-light-btn);
+}
+@media (prefers-color-scheme: dark) {
+  .md-swatch {
+    background: var(--sw-dark-bg);
+    box-shadow: none;
+  }
+  .md-swatch-bar {
+    background: rgb(255 255 255 / 0.22);
+  }
+  .md-swatch-card {
+    background: var(--sw-dark-card);
+    box-shadow: none;
+  }
+  .md-swatch-dot {
+    background: #4ade80;
+  }
+  .md-swatch-btn {
+    background: var(--sw-grad);
   }
 }
 

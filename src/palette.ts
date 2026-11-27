@@ -4,32 +4,33 @@ export const PALETTES = [
     id: "aurora",
     label: "极光",
     desc: "紫到蓝，默认",
-    // 设置页小样用的颜色：渐变两端、深色背景、深色卡片
-    swatch: { from: "#7048e8", to: "#2f6fe0", bg: "#0a0e1a", card: "#121829" },
+    // 设置页小样用的颜色：渐变两端、深色背景、深色卡片；浅色顶部极光、浅色背景、浅色主按钮
+    // 浅色三个值与 style.css 里该方案的 --md-hero-top、--md-bg、--md-accent 一致
+    swatch: { from: "#7048e8", to: "#2f6fe0", bg: "#0a0e1a", card: "#121829", lightTop: "#ede9ff", lightBg: "#f9f9fb", lightAccent: "#6a46e5" },
   },
   {
     id: "ocean",
     label: "深海",
     desc: "蓝到青，沉稳",
-    swatch: { from: "#2563eb", to: "#0e7490", bg: "#07111d", card: "#0e1a2a" },
+    swatch: { from: "#2563eb", to: "#0e7490", bg: "#07111d", card: "#0e1a2a", lightTop: "#e4eefd", lightBg: "#f9f9fb", lightAccent: "#1d5fd0" },
   },
   {
     id: "neon",
     label: "霓虹",
     desc: "品红到紫，鲜艳",
-    swatch: { from: "#c026d3", to: "#7c3aed", bg: "#0f0a1a", card: "#181127" },
+    swatch: { from: "#c026d3", to: "#7c3aed", bg: "#0f0a1a", card: "#181127", lightTop: "#f6e6fa", lightBg: "#faf9fb", lightAccent: "#a21caf" },
   },
   {
     id: "jade",
     label: "翡翠",
     desc: "绿到青绿，清新",
-    swatch: { from: "#047857", to: "#0f766e", bg: "#06120e", card: "#0d1c17" },
+    swatch: { from: "#047857", to: "#0f766e", bg: "#06120e", card: "#0d1c17", lightTop: "#e2f4ec", lightBg: "#f7f9f8", lightAccent: "#047857" },
   },
   {
     id: "graphite",
     label: "石墨",
     desc: "中性灰，不带彩色",
-    swatch: { from: "#f4f4f5", to: "#a1a1aa", bg: "#0b0b0d", card: "#151517" },
+    swatch: { from: "#f4f4f5", to: "#a1a1aa", bg: "#0b0b0d", card: "#151517", lightTop: "#ececee", lightBg: "#f9f9f9", lightAccent: "#3f3f46" },
   },
 ] as const;
 

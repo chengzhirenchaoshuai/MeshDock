@@ -243,24 +243,27 @@ function saveGateway(value: string) {
                 :style="settings.palette === p.id ? { boxShadow: '0 0 0 3px var(--md-accent-soft)' } : undefined"
                 @click="patch({ palette: p.id })"
               >
-                <!-- 小样：按该方案的深色效果画一个缩小的窗口 -->
-                <span class="relative block h-14 overflow-hidden rounded-[7px]" :style="{ background: p.swatch.bg }">
-                  <span
-                    class="absolute top-2 left-2 size-3.5 rounded"
-                    :style="{ background: `linear-gradient(135deg, ${p.swatch.from}, ${p.swatch.to})` }"
-                  />
-                  <span class="absolute top-2.5 left-7 h-1.5 w-8 rounded-full bg-white/25" />
-                  <span class="absolute inset-x-2 bottom-2 flex h-5 items-center gap-1 rounded px-1.5" :style="{ background: p.swatch.card }">
-                    <span class="size-1.5 rounded-full bg-[#4ade80]" />
-                    <span class="h-1 w-6 rounded-full bg-white/20" />
-                    <span
-                      class="ml-auto h-2.5 w-5 rounded-sm"
-                      :style="{ background: `linear-gradient(135deg, ${p.swatch.from}, ${p.swatch.to})` }"
-                    />
+                <!-- 小样：按该方案在当前主题（浅色或深色）下的效果画一个缩小的窗口；取哪套颜色由 style.css 的 .md-swatch 决定 -->
+                <span
+                  class="md-swatch relative block h-14 overflow-hidden rounded-[7px]"
+                  :style="{
+                    '--sw-grad': `linear-gradient(135deg, ${p.swatch.from}, ${p.swatch.to})`,
+                    '--sw-dark-bg': p.swatch.bg,
+                    '--sw-dark-card': p.swatch.card,
+                    '--sw-light-bg': `linear-gradient(180deg, ${p.swatch.lightTop}, ${p.swatch.lightBg})`,
+                    '--sw-light-btn': p.swatch.lightAccent,
+                  }"
+                >
+                  <span class="absolute top-2 left-2 size-3.5 rounded" style="background: var(--sw-grad)" />
+                  <span class="md-swatch-bar absolute top-2.5 left-7 h-1.5 w-8 rounded-full" />
+                  <span class="md-swatch-card absolute inset-x-2 bottom-2 flex h-5 items-center gap-1 rounded px-1.5">
+                    <span class="md-swatch-dot size-1.5 rounded-full" />
+                    <span class="md-swatch-bar h-1 w-6 rounded-full opacity-80" />
+                    <span class="md-swatch-btn ml-auto h-2.5 w-5 rounded-sm" />
                   </span>
                   <span
                     v-if="settings.palette === p.id"
-                    class="absolute top-1.5 right-1.5 grid size-4 place-items-center rounded-full bg-white text-[#18181b]"
+                    class="absolute top-1.5 right-1.5 grid size-4 place-items-center rounded-full bg-white text-[#18181b] shadow-[0_1px_3px_rgb(0_0_0/0.3)]"
                   >
                     <Check class="size-3" />
                   </span>
