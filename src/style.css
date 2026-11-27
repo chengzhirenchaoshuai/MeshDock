@@ -157,7 +157,7 @@
 /*
  * ---------- 其他配色方案 ----------
  * 只换品牌色、背景色调和光晕；连接状态色（绿、橙、黄、红、灰）在所有方案中保持不变。
- * 品牌色尽量避开绿、橙、黄、红，免得和状态色混淆；“翡翠”应要求用绿色，偏向青绿，与直连的纯绿拉开。
+ * 品牌色尽量避开绿、橙、黄、红，免得和状态色混淆；“青草”应要求用绿色，取偏黄的浅草绿，与直连的深绿拉开。
  * 写法：先写浅色，再在深色媒体查询里写深色；选择器比 :root 更具体，会覆盖上面的“极光”。
  * 浅色：背景、浅灰、边框取 Radix Colors 里和品牌色相配的灰阶（2/3/5 级），顶部极光取品牌渐变两端的颜色；
  * 文字灰度、阴影、主按钮等沿用“极光”的写法。深色块里会把浅色专用的变量复原，见深色部分开头。
@@ -204,41 +204,30 @@
 
 /* 翡翠：绿到青绿 */
 :root[data-palette="jade"] {
-  /* Sage 灰阶（带绿调） */
-  --md-bg: #f7f9f8;
+  /* 背景、浅灰、边框和次要文字都带草绿调，少用纯灰 */
+  --md-bg: #f5f9ef;
   --md-surface: #ffffff;
-  --md-subtle: #eef1f0;
-  --md-line: #dfe2e0;
-  --md-accent: #047857;
-  --md-accent-hover: #065f46;
+  --md-subtle: #ebf4df;
+  --md-line: #d9e8c8;
+  --md-fg: #1a2414;
+  --md-muted: #5a6b4b;
+  --md-faint: #86977a;
+  /* 文字、链接、选中边框用深一档的草绿：白底对比度 5.7，浅绿底 5.0 */
+  --md-accent: #467211;
+  --md-accent-hover: #3a5e0e;
   --md-accent-fg: #ffffff;
-  --md-grad: linear-gradient(135deg, #047857 0%, #0f766e 100%);
-  --md-grad-hover: linear-gradient(135deg, #065f46 0%, #115e59 100%);
-  --md-grad-fg: #ffffff;
-  --md-grad-shadow: #047857;
-  --md-hero-1: rgb(16 185 129 / 0.22);
-  --md-hero-2: rgb(20 184 166 / 0.2);
-  --md-hero-top: #e2f4ec;
-}
-
-/* 石墨：中性灰，不带彩色 */
-:root[data-palette="graphite"] {
-  /* Gray 灰阶（纯灰） */
-  --md-bg: #f9f9f9;
-  --md-surface: #ffffff;
-  --md-subtle: #f0f0f0;
-  --md-line: #e0e0e0;
-  --md-accent: #3f3f46;
-  --md-accent-hover: #27272a;
-  --md-accent-fg: #ffffff;
-  --md-grad: linear-gradient(135deg, #52525b 0%, #27272a 100%);
-  --md-grad-hover: linear-gradient(135deg, #3f3f46 0%, #18181b 100%);
-  --md-grad-fg: #ffffff;
-  --md-grad-shadow: #27272a;
-  /* 不带彩色，顶部只是一层淡灰 */
-  --md-hero-1: rgb(113 113 122 / 0.16);
-  --md-hero-2: rgb(161 161 170 / 0.16);
-  --md-hero-top: #ececee;
+  /* 渐变和主按钮用淡草绿，配深绿字（对比度 8.9） */
+  --md-grad: linear-gradient(135deg, #a3d65c 0%, #6ab535 100%);
+  --md-grad-hover: linear-gradient(135deg, #94cc4a 0%, #5ca82a 100%);
+  --md-grad-fg: #10240a;
+  --md-grad-shadow: #6ab535;
+  --md-primary-bg: #8fd14f;
+  --md-primary-bg-hover: #7ac143;
+  --md-primary-fg: #10240a;
+  --md-primary-shadow-hover: 0 2px 6px -1px rgb(106 181 53 / 0.45);
+  --md-hero-1: rgb(122 193 67 / 0.32);
+  --md-hero-2: rgb(163 230 53 / 0.28);
+  --md-hero-top: #e4f3d0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -285,39 +274,31 @@
   }
 
   :root[data-palette="jade"] {
-    --md-bg: #06120e;
-    --md-surface: #0d1c17;
-    --md-subtle: #14281f;
-    --md-line: #1f3a2f;
-    --md-accent: #2dd4bf;
-    --md-accent-hover: #5eead4;
-    --md-accent-fg: #042f2e;
-    --md-grad: linear-gradient(135deg, #047857 0%, #0f766e 100%);
-    --md-grad-hover: linear-gradient(135deg, #05906a 0%, #128a80 100%);
-    --md-grad-fg: #ffffff;
-    --md-grad-shadow: #047857;
-    --md-glow-1: rgb(16 185 129 / 0.14);
-    --md-glow-2: rgb(20 184 166 / 0.1);
-    --md-header: rgb(6 18 14 / 0.7);
+    /* 浅色块改了正文、次要、淡文字的颜色，这里复原成深色统一的值 */
+    --md-fg: #e8ebf5;
+    --md-muted: #a1a9c0;
+    --md-faint: #6b7390;
+    --md-bg: #0b1209;
+    --md-surface: #121c10;
+    --md-subtle: #1a2817;
+    --md-line: #283b24;
+    --md-accent: #a3e635;
+    --md-accent-hover: #bef264;
+    --md-accent-fg: #10240a;
+    --md-grad: linear-gradient(135deg, #8fd14f 0%, #5fa832 100%);
+    --md-grad-hover: linear-gradient(135deg, #9fdc5f 0%, #6db83c 100%);
+    --md-grad-fg: #10240a;
+    --md-grad-shadow: #6ab535;
+    /* 浅色块改了主按钮，这里复原成深色统一的渐变按钮 */
+    --md-primary-bg: var(--md-grad);
+    --md-primary-bg-hover: var(--md-grad-hover);
+    --md-primary-fg: var(--md-grad-fg);
+    --md-primary-shadow-hover: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
+    --md-glow-1: rgb(132 204 22 / 0.12);
+    --md-glow-2: rgb(163 230 53 / 0.07);
+    --md-header: rgb(11 18 9 / 0.7);
   }
 
-  /* 深色下灰色渐变改浅、字改深，否则按钮和背景分不开 */
-  :root[data-palette="graphite"] {
-    --md-bg: #0b0b0d;
-    --md-surface: #151517;
-    --md-subtle: #1e1e21;
-    --md-line: #2e2e33;
-    --md-accent: #e4e4e7;
-    --md-accent-hover: #ffffff;
-    --md-accent-fg: #18181b;
-    --md-grad: linear-gradient(135deg, #f4f4f5 0%, #a1a1aa 100%);
-    --md-grad-hover: linear-gradient(135deg, #ffffff 0%, #b4b4bc 100%);
-    --md-grad-fg: #18181b;
-    --md-grad-shadow: #000000;
-    --md-glow-1: rgb(161 161 170 / 0.08);
-    --md-glow-2: rgb(113 113 122 / 0.06);
-    --md-header: rgb(11 11 13 / 0.7);
-  }
 }
 
 /* 各状态色的淡色背景：胶囊、提示条、图标底色共用，不在模板里现拼

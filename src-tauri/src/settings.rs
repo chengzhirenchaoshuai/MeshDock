@@ -45,7 +45,8 @@ pub const REFRESH_CHOICES: [u64; 4] = [5, 10, 30, 60];
 /// 后台测速间隔的可选值（分钟）。最长 10 分钟：延迟小图把相隔超过 15 分钟的两次测量画成断开
 pub const SAMPLE_CHOICES: [u64; 4] = [1, 2, 5, 10];
 /// 配色方案的可选值，第一个是默认值；与前端 style.css 中的 data-palette 一致
-pub const PALETTE_CHOICES: [&str; 5] = ["aurora", "ocean", "neon", "jade", "graphite"];
+/// 曾有过的“graphite”（石墨）已删除，存着它的旧设置会按不认识的值改回默认值
+pub const PALETTE_CHOICES: [&str; 4] = ["aurora", "ocean", "neon", "jade"];
 /// 延迟提醒阈值的可选值（毫秒），0 为关闭
 pub const LATENCY_ALERT_CHOICES: [u64; 4] = [0, 100, 200, 500];
 /// 持续走中继提醒的可选值（分钟），0 为关闭
@@ -236,6 +237,9 @@ mod tests {
         let s = s.sanitized();
         assert_eq!(s.palette, "aurora");
         assert!(!s.notify);
+        // 已删除的石墨方案也改回默认值
+        let s: Settings = serde_json::from_str(r#"{ "palette": "graphite" }"#).unwrap();
+        assert_eq!(s.sanitized().palette, "aurora");
     }
 
     #[test]

@@ -22,15 +22,9 @@ export const PALETTES = [
   },
   {
     id: "jade",
-    label: "翡翠",
-    desc: "绿到青绿，清新",
-    swatch: { from: "#047857", to: "#0f766e", bg: "#06120e", card: "#0d1c17", lightTop: "#e2f4ec", lightBg: "#f7f9f8", lightAccent: "#047857" },
-  },
-  {
-    id: "graphite",
-    label: "石墨",
-    desc: "中性灰，不带彩色",
-    swatch: { from: "#f4f4f5", to: "#a1a1aa", bg: "#0b0b0d", card: "#151517", lightTop: "#ececee", lightBg: "#f9f9f9", lightAccent: "#3f3f46" },
+    label: "青草",
+    desc: "浅草绿，清新",
+    swatch: { from: "#a3d65c", to: "#6ab535", bg: "#0b1209", card: "#121c10", lightTop: "#e4f3d0", lightBg: "#f5f9ef", lightAccent: "#8fd14f" },
   },
 ] as const;
 
