@@ -211,29 +211,29 @@
 /* 青草：浅草绿（内部标识仍是 jade，沿用旧设置） */
 :root[data-palette="jade"] {
   /* 背景、浅灰、边框和次要文字都带草绿调，少用纯灰 */
-  --md-bg: #f5f9ef;
+  --md-bg: #f2f8ea;
   --md-surface: #ffffff;
-  --md-subtle: #ebf4df;
-  --md-line: #d9e8c8;
+  --md-subtle: #e6f1d7;
+  --md-line: #d2e3bd;
   --md-fg: #1a2414;
   --md-muted: #5a6b4b;
   --md-faint: #86977a;
-  /* 文字、链接、选中边框用深一档的草绿：白底对比度 5.7，浅绿底 5.0 */
+  /* 文字、链接、选中边框用深一档的草绿：白底对比度 5.7，浅绿底 4.9 */
   --md-accent: #467211;
   --md-accent-hover: #3a5e0e;
   --md-accent-fg: #ffffff;
-  /* 渐变和主按钮用淡草绿，配深绿字（对比度 8.9） */
-  --md-grad: linear-gradient(135deg, #a3d65c 0%, #6ab535 100%);
-  --md-grad-hover: linear-gradient(135deg, #94cc4a 0%, #5ca82a 100%);
+  /* 渐变和主按钮用中草绿，配深绿字（对比度 7.5，渐变深端 5.5） */
+  --md-grad: linear-gradient(135deg, #8cc84b 0%, #5aa830 100%);
+  --md-grad-hover: linear-gradient(135deg, #7fbd3f 0%, #4f9a28 100%);
   --md-grad-fg: #10240a;
   --md-grad-shadow: #6ab535;
-  --md-primary-bg: #8fd14f;
-  --md-primary-bg-hover: #7ac143;
+  --md-primary-bg: #7ac143;
+  --md-primary-bg-hover: #6ab535;
   --md-primary-fg: #10240a;
   --md-primary-shadow-hover: 0 2px 6px -1px rgb(106 181 53 / 0.45);
-  --md-hero-1: rgb(122 193 67 / 0.32);
-  --md-hero-2: rgb(163 230 53 / 0.28);
-  --md-hero-top: #e4f3d0;
+  --md-hero-1: rgb(106 181 53 / 0.38);
+  --md-hero-2: rgb(140 200 75 / 0.34);
+  --md-hero-top: #dbefc2;
 }
 
 @media (prefers-color-scheme: dark) {

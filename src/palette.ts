@@ -24,7 +24,7 @@ export const PALETTES = [
     id: "jade",
     label: "青草",
     desc: "浅草绿，清新",
-    swatch: { from: "#a3d65c", to: "#6ab535", bg: "#0b1209", card: "#121c10", lightTop: "#e4f3d0", lightBg: "#f5f9ef", lightAccent: "#8fd14f" },
+    swatch: { from: "#8cc84b", to: "#5aa830", bg: "#0b1209", card: "#121c10", lightTop: "#dbefc2", lightBg: "#f2f8ea", lightAccent: "#7ac143" },
   },
 ] as const;
 
