@@ -119,7 +119,10 @@ const verdict = computed((): { level: Level; title: string; desc: string } => {
 
     <template v-else>
       <!-- 总评：一眼看到这次体检的结果 -->
-      <div class="ui-card flex items-center gap-3.5 p-4" :style="{ background: `var(--md-${levelStyle[verdict.level].tone}-soft)` }">
+      <div class="ui-card flex items-center gap-3.5 p-4" :style="{
+          // 淡色叠在垫底色上：浅色垫白，免得透出背后的顶部极光而发灰
+          background: `linear-gradient(var(--md-${levelStyle[verdict.level].tone}-soft), var(--md-${levelStyle[verdict.level].tone}-soft)), var(--md-soft-base)`,
+        }">
         <component
           :is="levelStyle[verdict.level].icon"
           class="size-8 shrink-0"

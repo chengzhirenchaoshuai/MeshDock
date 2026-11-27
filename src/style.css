@@ -32,14 +32,15 @@
 }
 
 /* ---------- 浅色（默认配色方案“极光”） ---------- */
+/* 中性色取自 Radix Colors 的 Slate 灰阶（slate2/3/6/9/11/12），接近纯灰，只带一点冷调 */
 :root {
-  --md-bg: #f3f4fa;
+  --md-bg: #f9f9fb;
   --md-surface: #ffffff;
-  --md-subtle: #eef0f7;
-  --md-line: #e1e4ef;
-  --md-fg: #151a2d;
-  --md-muted: #5b6378;
-  --md-faint: #959cb0;
+  --md-subtle: #f0f0f3;
+  --md-line: #e0e1e6;
+  --md-fg: #1c2024;
+  --md-muted: #60646c;
+  --md-faint: #8b8d98;
   --md-accent: #6a46e5;
   --md-accent-hover: #5a36d6;
   --md-accent-fg: #ffffff;
@@ -57,14 +58,44 @@
   /* 渐变上的文字和图标颜色、渐变按钮的投影颜色 */
   --md-grad-fg: #ffffff;
   --md-grad-shadow: #7048e8;
-  /* 背景光晕（只是装饰） */
-  --md-glow-1: rgb(112 72 232 / 0.1);
-  --md-glow-2: rgb(47 111 224 / 0.08);
-  --md-header: rgb(255 255 255 / 0.72);
-  --md-shadow-card: 0 1px 2px rgb(20 24 50 / 0.05), 0 4px 16px -6px rgb(20 24 50 / 0.08);
-  --md-shadow-raised: 0 2px 4px rgb(20 24 50 / 0.06), 0 12px 28px -8px rgb(20 24 50 / 0.16);
-  --md-shadow-dialog: 0 24px 64px -12px rgb(20 24 50 / 0.3);
-  --md-scrim: rgb(15 18 35 / 0.35);
+  /* 主按钮：浅色用纯色，更克制；深色仍用品牌渐变 */
+  --md-primary-bg: var(--md-accent);
+  --md-primary-bg-hover: var(--md-accent-hover);
+  --md-primary-fg: var(--md-accent-fg);
+  --md-primary-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  --md-primary-shadow-hover: 0 2px 6px -1px color-mix(in srgb, var(--md-accent) 35%, transparent);
+  /* 输入框底色：浅色用白底，不再像灰色凹槽 */
+  --md-input-bg: var(--md-surface);
+  /* 状态淡色背景的混色比例，见下方“各状态色的淡色背景” */
+  --md-soft-pct: 9%;
+  /* 满屏光晕：浅色下不用，改用下面的顶部极光 */
+  --md-glow-1: transparent;
+  --md-glow-2: transparent;
+  /* 顶部极光：页面顶部两团品牌色光，再往下渐隐成底色；只铺在窗口上部，不会满屏发雾 */
+  --md-hero-1: rgb(124 92 255 / 0.28);
+  --md-hero-2: rgb(56 132 255 / 0.24);
+  --md-hero-top: #ede9ff;
+  /* 顶栏透明，让极光透上来；分隔线也去掉 */
+  --md-header: transparent;
+  --md-header-line: transparent;
+  /* 卡片：极淡的边框加一层带品牌色的投影，浮在极光上 */
+  --md-card-line: rgb(16 24 40 / 0.06);
+  --md-shadow-card: 0 1px 2px rgb(16 24 40 / 0.04),
+    0 4px 14px -4px color-mix(in srgb, var(--md-grad-shadow) 12%, transparent);
+  --md-shadow-raised: 0 1px 2px rgb(16 24 40 / 0.04),
+    0 10px 24px -8px color-mix(in srgb, var(--md-grad-shadow) 22%, transparent);
+  /* 卡片标题前的图标底：浅色用品牌渐变加白色图标，和程序图标呼应 */
+  --md-chip-bg: var(--md-grad);
+  --md-chip-fg: var(--md-grad-fg);
+  --md-chip-shadow: 0 4px 10px -4px color-mix(in srgb, var(--md-grad-shadow) 60%, transparent);
+  /* 选中标签页的文字颜色 */
+  --md-tab-active: var(--md-accent);
+  /* 统计数字是否染上状态色：100% 染色，0% 保持正文色 */
+  --md-stat-tint: 100%;
+  /* 页面级淡色横幅的垫底：浅色垫白，免得透出背后的极光而发灰 */
+  --md-soft-base: var(--md-surface);
+  --md-shadow-dialog: 0 1px 3px rgb(16 24 40 / 0.06), 0 20px 48px -12px rgb(16 24 40 / 0.22);
+  --md-scrim: rgb(15 18 35 / 0.3);
   color-scheme: light;
 }
 
@@ -93,6 +124,25 @@
     --md-grad-hover: linear-gradient(135deg, #7f5af0 0%, #3b7cf0 100%);
     --md-grad-fg: #ffffff;
     --md-grad-shadow: #7048e8;
+    --md-primary-bg: var(--md-grad);
+    --md-primary-bg-hover: var(--md-grad-hover);
+    --md-primary-fg: var(--md-grad-fg);
+    --md-primary-shadow: 0 4px 14px -6px color-mix(in srgb, var(--md-grad-shadow) 70%, transparent);
+    --md-primary-shadow-hover: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
+    --md-input-bg: var(--md-bg);
+    --md-soft-pct: 14%;
+    /* 深色保持原样：不用顶部极光，顶栏半透明带分隔线，图标底用淡色，数字不染色 */
+    --md-hero-1: transparent;
+    --md-hero-2: transparent;
+    --md-hero-top: transparent;
+    --md-header-line: var(--md-line);
+    --md-card-line: var(--md-line);
+    --md-chip-bg: var(--md-accent-soft);
+    --md-chip-fg: var(--md-accent);
+    --md-chip-shadow: none;
+    --md-tab-active: var(--md-fg);
+    --md-stat-tint: 0%;
+    --md-soft-base: transparent;
     --md-glow-1: rgb(124 92 255 / 0.18);
     --md-glow-2: rgb(34 211 238 / 0.09);
     --md-header: rgb(10 14 26 / 0.7);
@@ -111,6 +161,22 @@
  * 写法：先写浅色，再在深色媒体查询里写深色；选择器比 :root 更具体，会覆盖上面的“极光”。
  * 可选值与后端 settings.rs 的 PALETTE_CHOICES、前端 palette.ts 一致。
  */
+
+/* 浅色的纯色主按钮、顶部极光、透明顶栏暂时只给“极光”，其他方案保持原样（待逐个调整） */
+:root[data-palette="ocean"],
+:root[data-palette="neon"],
+:root[data-palette="jade"],
+:root[data-palette="graphite"] {
+  --md-primary-bg: var(--md-grad);
+  --md-primary-bg-hover: var(--md-grad-hover);
+  --md-primary-fg: var(--md-grad-fg);
+  --md-primary-shadow: 0 4px 14px -6px color-mix(in srgb, var(--md-grad-shadow) 70%, transparent);
+  --md-primary-shadow-hover: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
+  --md-hero-1: transparent;
+  --md-hero-2: transparent;
+  --md-hero-top: transparent;
+  --md-header-line: var(--md-line);
+}
 
 /* 深海：蓝到青 */
 :root[data-palette="ocean"] {
@@ -255,15 +321,16 @@
   }
 }
 
-/* 各状态色的淡色背景：胶囊、提示条、图标底色共用，不在模板里现拼 */
+/* 各状态色的淡色背景：胶囊、提示条、图标底色共用，不在模板里现拼
+ * 浅色用 9%：状态色偏深，比例高了会混成灰绿、灰橙，显得发闷；深色仍用 14% */
 :root {
-  --md-direct-soft: color-mix(in srgb, var(--md-direct) 14%, transparent);
-  --md-relay-soft: color-mix(in srgb, var(--md-relay) 14%, transparent);
-  --md-offline-soft: color-mix(in srgb, var(--md-offline) 14%, transparent);
-  --md-punching-soft: color-mix(in srgb, var(--md-punching) 14%, transparent);
-  --md-error-soft: color-mix(in srgb, var(--md-error) 14%, transparent);
-  --md-idle-soft: color-mix(in srgb, var(--md-idle) 14%, transparent);
-  --md-accent-soft: color-mix(in srgb, var(--md-accent) 14%, transparent);
+  --md-direct-soft: color-mix(in srgb, var(--md-direct) var(--md-soft-pct), transparent);
+  --md-relay-soft: color-mix(in srgb, var(--md-relay) var(--md-soft-pct), transparent);
+  --md-offline-soft: color-mix(in srgb, var(--md-offline) var(--md-soft-pct), transparent);
+  --md-punching-soft: color-mix(in srgb, var(--md-punching) var(--md-soft-pct), transparent);
+  --md-error-soft: color-mix(in srgb, var(--md-error) var(--md-soft-pct), transparent);
+  --md-idle-soft: color-mix(in srgb, var(--md-idle) var(--md-soft-pct), transparent);
+  --md-accent-soft: color-mix(in srgb, var(--md-accent) var(--md-soft-pct), transparent);
   /* 动效 */
   --md-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --md-fast: 120ms;
@@ -279,8 +346,11 @@ body,
 body {
   margin: 0;
   background-color: var(--md-bg);
-  /* 左上紫、右上青两团光晕，固定在窗口上 */
+  /* 前三层是浅色的顶部极光，后两层是深色的左上、右上光晕；不用的一组颜色为透明。固定在窗口上 */
   background-image:
+    radial-gradient(60% 260px at 15% 0%, var(--md-hero-1), transparent 70%),
+    radial-gradient(50% 240px at 85% 0%, var(--md-hero-2), transparent 70%),
+    linear-gradient(180deg, var(--md-hero-top), transparent 300px),
     radial-gradient(900px 480px at 0% -10%, var(--md-glow-1), transparent 70%),
     radial-gradient(700px 420px at 100% -5%, var(--md-glow-2), transparent 70%);
   background-attachment: fixed;
@@ -326,7 +396,7 @@ body {
   /* ---------- 卡片 ---------- */
   .ui-card {
     position: relative;
-    border: 1px solid var(--md-line);
+    border: 1px solid var(--md-card-line);
     border-radius: var(--radius-card);
     background: var(--md-surface);
     box-shadow: var(--md-shadow-card);
@@ -336,9 +406,16 @@ body {
       border-color var(--md-normal) var(--md-ease);
   }
   .ui-card-interactive:hover {
-    border-color: color-mix(in srgb, var(--md-accent) 30%, var(--md-line));
+    border-color: color-mix(in srgb, var(--md-accent) 30%, var(--md-card-line));
     box-shadow: var(--md-shadow-raised);
     transform: translateY(-2px);
+  }
+
+  /* 卡片标题前的图标底 */
+  .ui-chip {
+    background: var(--md-chip-bg);
+    color: var(--md-chip-fg);
+    box-shadow: var(--md-chip-shadow);
   }
 
   /* ---------- 按钮 ---------- */
@@ -390,13 +467,13 @@ body {
     height: 1rem;
   }
   .ui-btn-primary {
-    background: var(--md-grad);
-    color: var(--md-grad-fg);
-    box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--md-grad-shadow) 70%, transparent);
+    background: var(--md-primary-bg);
+    color: var(--md-primary-fg);
+    box-shadow: var(--md-primary-shadow);
   }
   .ui-btn-primary:not(:disabled):hover {
-    background: var(--md-grad-hover);
-    box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--md-grad-shadow) 85%, transparent);
+    background: var(--md-primary-bg-hover);
+    box-shadow: var(--md-primary-shadow-hover);
   }
   .ui-btn-secondary {
     border-color: var(--md-line);
@@ -443,7 +520,7 @@ body {
   .ui-input {
     border: 1px solid var(--md-line);
     border-radius: var(--radius-ctl);
-    background: var(--md-bg);
+    background: var(--md-input-bg);
     padding: 0.25rem 0.625rem;
     transition:
       border-color var(--md-fast) var(--md-ease),

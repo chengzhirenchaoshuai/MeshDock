@@ -258,7 +258,10 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <!-- 顶栏：左边品牌和状态，右边操作；下面一行是标签页 -->
-    <header class="z-10 border-b border-line backdrop-blur-xl" style="background: var(--md-header)">
+    <header
+      class="z-10 border-b backdrop-blur-xl"
+      style="background: var(--md-header); border-color: var(--md-header-line)"
+    >
       <div class="flex items-center gap-3 px-6 pt-3 pb-2">
         <span
           class="grid size-8 shrink-0 place-items-center rounded-ctl text-[var(--md-grad-fg)]"
@@ -338,7 +341,7 @@ onUnmounted(() => {
           role="tab"
           :aria-selected="tab === t.id"
           class="relative inline-flex items-center gap-1.5 px-3 pt-1.5 pb-2.5 text-sm transition-colors"
-          :class="tab === t.id ? 'font-medium text-fg' : 'text-muted hover:text-fg'"
+          :class="tab === t.id ? 'font-medium text-[var(--md-tab-active)]' : 'text-muted hover:text-fg'"
           @click="tab = t.id"
         >
           <component :is="t.icon" class="size-4" :class="{ 'text-accent': tab === t.id }" />

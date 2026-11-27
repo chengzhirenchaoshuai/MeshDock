@@ -16,8 +16,7 @@ withDefaults(
     <header v-if="title || $slots.actions" class="mb-3 flex items-center gap-2.5">
       <span
         v-if="icon"
-        class="grid size-7 shrink-0 place-items-center rounded-ctl text-accent"
-        style="background: var(--md-accent-soft)"
+        class="ui-chip grid size-7 shrink-0 place-items-center rounded-ctl"
       >
         <component :is="icon" class="size-4" />
       </span>

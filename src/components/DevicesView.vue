@@ -134,7 +134,18 @@ async function sendTo(id: string, send: (id: string) => Promise<SendResult | nul
       <div v-for="s in stats" :key="s.tone" class="ui-card flex items-center gap-3 px-4 py-3">
         <span class="h-8 w-1 shrink-0 rounded-full" :style="{ background: `var(--md-${s.tone})` }" />
         <div class="min-w-0">
-          <div class="num text-2xl leading-none font-semibold" :class="{ 'text-faint': s.n === 0 }">{{ s.n }}</div>
+          <!-- 直连、中继的数字在浅色下染上状态色（由 --md-stat-tint 控制），为 0 时一律淡显 -->
+          <div
+            class="num text-[1.75rem] leading-none font-semibold"
+            :class="{ 'text-faint': s.n === 0 }"
+            :style="
+              s.n > 0 && (s.tone === 'direct' || s.tone === 'relay')
+                ? { color: `color-mix(in srgb, var(--md-${s.tone}) var(--md-stat-tint), var(--md-fg))` }
+                : undefined
+            "
+          >
+            {{ s.n }}
+          </div>
           <div class="mt-1 text-xs text-muted">{{ s.label }}</div>
         </div>
       </div>
